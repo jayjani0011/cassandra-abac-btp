@@ -90,3 +90,7 @@ cassandra-builds/
 cassandra-dtest/
 
 conf/triggers/trigger-example.jar
+
+# Local SSH identity used solely to push this BTP repository
+.github-btp-deploy-key
+.github-btp-deploy-key.pub

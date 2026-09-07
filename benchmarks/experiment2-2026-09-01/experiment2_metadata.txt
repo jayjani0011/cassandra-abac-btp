@@ -1,0 +1,14 @@
+experiment=Chapter 6 Experiment 2
+method=getAbacPermissions(AuthenticatedUser, IResource)
+warmup_calls_per_point=20
+measured_calls_per_point=50
+threads=1
+environment_conditions=none
+nonmatching_rules=all except last; first user condition mismatches
+odd_condition_split=ceil(conditions/2) user, remainder resource
+logging=WARN (excluded from timing)
+java.version=11.0.27
+java.vm.name=OpenJDK 64-Bit Server VM
+os.name=Linux
+os.arch=amd64
+available_processors=12
