@@ -1,0 +1,13 @@
+{
+  "generator_version": "1",
+  "seed": 20261004,
+  "users": 10,
+  "resources": 40,
+  "attributes_per_entity": 1,
+  "values_per_attribute": 2,
+  "rules": 1,
+  "conditions_per_rule": 1,
+  "permission": "SELECT",
+  "probe_user": "benchmark_user_0005",
+  "probe_resource": "data/abac_benchmark/resource_0022"
+}

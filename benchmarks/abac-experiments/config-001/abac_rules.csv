@@ -1,0 +1,2 @@
+rule_name,effect,permission,expected_probe_match
+rule_0001,GRANT,SELECT,true

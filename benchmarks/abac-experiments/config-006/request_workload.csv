@@ -1,0 +1,2 @@
+request_id,user_name,resource_name,permission,expected_allowed
+probe_allow,benchmark_user_0270,data/abac_benchmark/resource_0014,SELECT,true
