@@ -1,9 +1,3 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0.
- */
 package org.apache.cassandra.auth;
 
 import java.io.BufferedWriter;
@@ -20,9 +14,9 @@ import java.util.Random;
 /**
  * Generates one reproducible ABAC benchmark configuration and writes the complete policy input to disk.
  *
- * <p>The generated policy contains exactly one rule which grants SELECT to the generated probe request.
- * Every other rule is random, but is deliberately made not to match that probe request. This gives a known
- * allowed request for a timing runner without relying on a separate policy evaluator.</p>
+ * <p>The generator creates policy data only: users, resources, attribute assignments, and GRANT SELECT rules.
+ * It deliberately does not generate a request workload. A benchmark runner supplies the workload separately,
+ * allowing the same test cases to be used across configurations in an experiment.</p>
  *
  * <p>Usage:
  * <pre>
@@ -33,7 +27,7 @@ import java.util.Random;
  */
 public final class AbacConfigurationGenerator
 {
-    private static final String GENERATOR_VERSION = "1";
+    private static final String GENERATOR_VERSION = "2";
     private static final String PERMISSION = "SELECT";
     private static final String EFFECT = "GRANT";
     private static final String KEYSPACE = "abac_benchmark";
@@ -97,22 +91,17 @@ public final class AbacConfigurationGenerator
         int[][] resourceValues = randomValues(configuration.resources, configuration.attributesPerEntity,
                                               configuration.valuesPerAttribute, random);
 
-        int probeUser = random.nextInt(configuration.users);
-        int probeResource = random.nextInt(configuration.resources);
         int userConditionCount = (configuration.conditionsPerRule + 1) / 2;
         int resourceConditionCount = configuration.conditionsPerRule - userConditionCount;
 
         List<Rule> rules = new ArrayList<>(configuration.rules);
-        rules.add(matchingRule("rule_0001", probeUser, probeResource, userValues, resourceValues,
-                               userConditionCount, resourceConditionCount, random));
-        for (int ruleIndex = 1; ruleIndex < configuration.rules; ruleIndex++)
+        for (int ruleIndex = 0; ruleIndex < configuration.rules; ruleIndex++)
         {
-            rules.add(nonMatchingRule(String.format(Locale.ROOT, "rule_%04d", ruleIndex + 1), probeUser,
-                                      probeResource, configuration, userValues, resourceValues,
-                                      userConditionCount, resourceConditionCount, random));
+            rules.add(randomRule(String.format(Locale.ROOT, "rule_%04d", ruleIndex + 1), configuration,
+                                 userConditionCount, resourceConditionCount, random));
         }
 
-        return new GeneratedConfiguration(configuration, userValues, resourceValues, rules, probeUser, probeResource);
+        return new GeneratedConfiguration(configuration, userValues, resourceValues, rules);
     }
 
     private static int[][] randomValues(int entityCount, int attributeCount, int valueCount, Random random)
@@ -124,42 +113,15 @@ public final class AbacConfigurationGenerator
         return values;
     }
 
-    private static Rule matchingRule(String name, int probeUser, int probeResource, int[][] userValues,
-                                     int[][] resourceValues, int userConditionCount, int resourceConditionCount,
-                                     Random random)
-    {
-        List<Condition> conditions = new ArrayList<>();
-        for (int attribute : selectedAttributes(userValues[probeUser].length, userConditionCount, random))
-            conditions.add(new Condition(EntityType.USER, attribute, userValues[probeUser][attribute]));
-        for (int attribute : selectedAttributes(resourceValues[probeResource].length, resourceConditionCount, random))
-            conditions.add(new Condition(EntityType.RESOURCE, attribute, resourceValues[probeResource][attribute]));
-        return new Rule(name, conditions, true);
-    }
-
-    private static Rule nonMatchingRule(String name, int probeUser, int probeResource, Configuration configuration,
-                                        int[][] userValues, int[][] resourceValues, int userConditionCount,
-                                        int resourceConditionCount, Random random)
+    private static Rule randomRule(String name, Configuration configuration, int userConditionCount,
+                                   int resourceConditionCount, Random random)
     {
         List<Condition> conditions = new ArrayList<>();
         for (int attribute : selectedAttributes(configuration.attributesPerEntity, userConditionCount, random))
             conditions.add(new Condition(EntityType.USER, attribute, random.nextInt(configuration.valuesPerAttribute)));
         for (int attribute : selectedAttributes(configuration.attributesPerEntity, resourceConditionCount, random))
             conditions.add(new Condition(EntityType.RESOURCE, attribute, random.nextInt(configuration.valuesPerAttribute)));
-
-        // Ensure this rule cannot match the probe. We use another valid value from the same domain,
-        // rather than a synthetic value that falls outside the configured value cardinality.
-        Condition condition = conditions.get(random.nextInt(conditions.size()));
-        int probeValue = condition.entityType == EntityType.USER
-                         ? userValues[probeUser][condition.attributeIndex]
-                         : resourceValues[probeResource][condition.attributeIndex];
-        condition.requiredValue = differentValue(probeValue, configuration.valuesPerAttribute, random);
-        return new Rule(name, conditions, false);
-    }
-
-    private static int differentValue(int value, int valueCount, Random random)
-    {
-        int offset = 1 + random.nextInt(valueCount - 1);
-        return (value + offset) % valueCount;
+        return new Rule(name, conditions);
     }
 
     private static List<Integer> selectedAttributes(int attributeCount, int needed, Random random)
@@ -180,7 +142,6 @@ public final class AbacConfigurationGenerator
         writeAttributes(outputDirectory.resolve("resource_attributes.csv"), generated.resourceValues, EntityType.RESOURCE);
         writeRules(outputDirectory.resolve("abac_rules.csv"), generated.rules);
         writeRuleConditions(outputDirectory.resolve("rule_conditions.csv"), generated.rules);
-        writeProbeRequest(outputDirectory.resolve("request_workload.csv"), generated);
     }
 
     private static void writeConfiguration(Path path, GeneratedConfiguration generated) throws IOException
@@ -196,13 +157,10 @@ public final class AbacConfigurationGenerator
                                     "  \"values_per_attribute\": %d,\n" +
                                     "  \"rules\": %d,\n" +
                                     "  \"conditions_per_rule\": %d,\n" +
-                                    "  \"permission\": \"%s\",\n" +
-                                    "  \"probe_user\": \"%s\",\n" +
-                                    "  \"probe_resource\": \"%s\"\n" +
+                                    "  \"rule_permission\": \"%s\"\n" +
                                     "}\n",
                                     GENERATOR_VERSION, c.seed, c.users, c.resources, c.attributesPerEntity,
-                                    c.valuesPerAttribute, c.rules, c.conditionsPerRule, PERMISSION,
-                                    userName(generated.probeUser), resourceName(generated.probeResource));
+                                    c.valuesPerAttribute, c.rules, c.conditionsPerRule, PERMISSION);
         Files.writeString(path, json);
     }
 
@@ -248,9 +206,9 @@ public final class AbacConfigurationGenerator
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
-            writer.write("rule_name,effect,permission,expected_probe_match\n");
+            writer.write("rule_name,effect,permission\n");
             for (Rule rule : rules)
-                writer.write(rule.name + "," + EFFECT + "," + PERMISSION + "," + rule.matchesProbe + "\n");
+                writer.write(rule.name + "," + EFFECT + "," + PERMISSION + "\n");
         }
     }
 
@@ -268,15 +226,6 @@ public final class AbacConfigurationGenerator
                                  valueName(condition.requiredValue) + "\n");
                 }
             }
-        }
-    }
-
-    private static void writeProbeRequest(Path path, GeneratedConfiguration generated) throws IOException
-    {
-        try (BufferedWriter writer = Files.newBufferedWriter(path))
-        {
-            writer.write("request_id,user_name,resource_name,permission,expected_allowed\n");
-            writer.write("probe_allow," + userName(generated.probeUser) + "," + resourceName(generated.probeResource) + "," + PERMISSION + ",true\n");
         }
     }
 
@@ -330,9 +279,6 @@ public final class AbacConfigurationGenerator
 
         private void validate()
         {
-            if (valuesPerAttribute < 2)
-                throw new IllegalArgumentException("values-per-attribute must be at least 2 so non-matching rules can use another domain value");
-
             int userConditions = (conditionsPerRule + 1) / 2;
             int resourceConditions = conditionsPerRule - userConditions;
             if (userConditions > attributesPerEntity || resourceConditions > attributesPerEntity)
@@ -348,18 +294,14 @@ public final class AbacConfigurationGenerator
         final int[][] userValues;
         final int[][] resourceValues;
         final List<Rule> rules;
-        final int probeUser;
-        final int probeResource;
 
         private GeneratedConfiguration(Configuration configuration, int[][] userValues, int[][] resourceValues,
-                                       List<Rule> rules, int probeUser, int probeResource)
+                                       List<Rule> rules)
         {
             this.configuration = configuration;
             this.userValues = userValues;
             this.resourceValues = resourceValues;
             this.rules = rules;
-            this.probeUser = probeUser;
-            this.probeResource = probeResource;
         }
     }
 
@@ -367,13 +309,11 @@ public final class AbacConfigurationGenerator
     {
         final String name;
         final List<Condition> conditions;
-        final boolean matchesProbe;
 
-        private Rule(String name, List<Condition> conditions, boolean matchesProbe)
+        private Rule(String name, List<Condition> conditions)
         {
             this.name = name;
             this.conditions = conditions;
-            this.matchesProbe = matchesProbe;
         }
     }
 
@@ -381,7 +321,7 @@ public final class AbacConfigurationGenerator
     {
         final EntityType entityType;
         final int attributeIndex;
-        int requiredValue;
+        final int requiredValue;
 
         private Condition(EntityType entityType, int attributeIndex, int requiredValue)
         {
