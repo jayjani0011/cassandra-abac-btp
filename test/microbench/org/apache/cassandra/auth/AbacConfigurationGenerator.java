@@ -11,20 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Random;
 
-/**
- * Generates one reproducible ABAC benchmark configuration and writes the complete policy input to disk.
- *
- * <p>The generator creates policy data only: users, resources, attribute assignments, and GRANT SELECT rules.
- * It deliberately does not generate a request workload. A benchmark runner supplies the workload separately,
- * allowing the same test cases to be used across configurations in an experiment.</p>
- *
- * <p>Usage:
- * <pre>
- * AbacConfigurationGenerator &lt;output-directory&gt; &lt;seed&gt; &lt;users&gt; &lt;resources&gt;
- *                            &lt;attributes-per-entity&gt; &lt;values-per-attribute&gt;
- *                            &lt;rules&gt; &lt;conditions-per-rule&gt;
- * </pre>
- */
+/** Generates reproducible ABAC policy data from a seed and configuration parameters. */
 public final class AbacConfigurationGenerator
 {
     private static final String GENERATOR_VERSION = "2";
