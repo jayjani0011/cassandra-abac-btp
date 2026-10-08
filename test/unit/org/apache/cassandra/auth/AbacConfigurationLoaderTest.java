@@ -31,6 +31,7 @@ public class AbacConfigurationLoaderTest extends CQLTester
         assertEquals(dataset.userAttributes.size(), rowCount("system_auth.user_attribute_values"));
         assertEquals(dataset.resourceAttributes.size(), rowCount("system_auth.resource_attribute_values"));
         assertEquals(dataset.rules.size(), rowCount("system_auth.abac_rules"));
+        assertEquals(dataset.configuration.environmentConditionsPerRule, dataset.environmentAttributes.size());
 
         UntypedResultSet.Row rule = QueryProcessor.executeInternal("SELECT * FROM system_auth.abac_rules WHERE rule_name = 'rule_0001'").one();
         assertEquals("GRANT", rule.getString("effect"));
@@ -39,6 +40,14 @@ public class AbacConfigurationLoaderTest extends CQLTester
                                rule.getMap("user_attribute_conditions", UTF8Type.instance, UTF8Type.instance));
         assertStoredConditions(dataset.conditionsByRule.get("rule_0001").resource,
                                rule.getMap("resource_attribute_conditions", UTF8Type.instance, UTF8Type.instance));
+        assertStoredConditions(dataset.conditionsByRule.get("rule_0001").environment,
+                               rule.getMap("environment_attribute_conditions", UTF8Type.instance, UTF8Type.instance));
+
+        CassandraAuthorizer authorizer = new CassandraAuthorizer();
+        String matchingUser = matchingUser(dataset);
+        assertEquals(Collections.singleton(Permission.SELECT),
+                     authorizer.getAbacPermissions(new AuthenticatedUser(matchingUser),
+                                                    DataResource.table("abac_benchmark", "resource_0001")));
     }
 
     private static long rowCount(String table)
@@ -49,5 +58,17 @@ public class AbacConfigurationLoaderTest extends CQLTester
     private static void assertStoredConditions(Map<String, String> expected, Map<String, String> actual)
     {
         assertEquals(expected.isEmpty() ? null : expected, actual);
+    }
+
+    private static String matchingUser(AbacConfigurationLoader.Dataset dataset)
+    {
+        Map<String, String> conditions = dataset.conditionsByRule.get("rule_0001").user;
+        for (AbacConfigurationLoader.AttributeAssignment assignment : dataset.userAttributes)
+        {
+            if (conditions.size() == 1 && conditions.get(assignment.attributeName) != null &&
+                conditions.get(assignment.attributeName).equals(assignment.attributeValue))
+                return assignment.entityName;
+        }
+        throw new AssertionError("C1 should contain a user matching rule_0001");
     }
 }

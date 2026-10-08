@@ -2,6 +2,7 @@ package org.apache.cassandra.service;
 
 import java.util.Map;
 import java.util.ServiceLoader;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -19,6 +20,7 @@ public final class EnvironmentAttributeManager
     private static final EnvironmentAttributeManager instance = new EnvironmentAttributeManager();
 
     private final Map<String, EnvironmentAttributeProvider> providers;
+    private final Map<String, EnvironmentAttributeProvider> registeredProviders = new ConcurrentHashMap<>();
 
     private EnvironmentAttributeManager()
     {
@@ -53,12 +55,19 @@ public final class EnvironmentAttributeManager
      */
     public String getAttributeValue(String attributeName)
     {
-        EnvironmentAttributeProvider provider = providers.get(attributeName);
+        EnvironmentAttributeProvider provider = registeredProviders.get(attributeName);
+        if (provider == null)
+            provider = providers.get(attributeName);
         if (provider == null)
         {
             logger.trace("No EnvironmentAttributeProvider found for attribute name '{}'", attributeName);
             return null;
         }
         return provider.getValue();
+    }
+
+    public void registerProvider(EnvironmentAttributeProvider provider)
+    {
+        registeredProviders.put(provider.getAttributeName(), provider);
     }
 }

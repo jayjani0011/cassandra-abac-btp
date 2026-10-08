@@ -11,6 +11,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.cassandra.cql3.QueryProcessor;
+import org.apache.cassandra.service.EnvironmentAttributeManager;
 
 public final class AbacConfigurationLoader
 {
@@ -19,6 +20,7 @@ public final class AbacConfigurationLoader
                                                                "resources.csv",
                                                                "user_attributes.csv",
                                                                "resource_attributes.csv",
+                                                               "environment_attributes.csv",
                                                                "abac_rules.csv",
                                                                "rule_conditions.csv");
 
@@ -48,6 +50,7 @@ public final class AbacConfigurationLoader
                                  intField(json, "values_per_attribute"),
                                  intField(json, "rules"),
                                  intField(json, "conditions_per_rule"),
+                                 intField(json, "environment_conditions_per_rule"),
                                  stringField(json, "rule_permission"));
     }
 
@@ -61,6 +64,8 @@ public final class AbacConfigurationLoader
                                                    "user_name,attribute_name,attribute_value", 3);
         List<String[]> resourceAttributeRows = readCsv(configuration.directory.resolve("resource_attributes.csv"),
                                                        "resource_name,attribute_name,attribute_value", 3);
+        List<String[]> environmentAttributeRows = readCsv(configuration.directory.resolve("environment_attributes.csv"),
+                                                          "attribute_name,attribute_value", 2);
         List<String[]> ruleRows = readCsv(configuration.directory.resolve("abac_rules.csv"),
                                           "rule_name,effect,permission", 3);
         List<String[]> conditionRows = readCsv(configuration.directory.resolve("rule_conditions.csv"),
@@ -71,9 +76,11 @@ public final class AbacConfigurationLoader
                                       names(resourceRows),
                                       attributeAssignments(userAttributeRows),
                                       attributeAssignments(resourceAttributeRows),
+                                      environmentAttributes(environmentAttributeRows),
                                       rules(ruleRows),
                                       ruleConditions(conditionRows),
-                                      conditionsByRule(ruleRows, conditionRows, configuration.conditionsPerRule));
+                                      conditionsByRule(ruleRows, conditionRows, configuration.conditionsPerRule,
+                                                       configuration.environmentConditionsPerRule));
         dataset.validateRowCounts();
         return dataset;
     }
@@ -87,6 +94,7 @@ public final class AbacConfigurationLoader
 
     public static void load(Dataset dataset)
     {
+        registerEnvironmentAttributes(dataset);
         clearAbacData();
 
         for (AttributeAssignment assignment : dataset.userAttributes)
@@ -100,14 +108,22 @@ public final class AbacConfigurationLoader
             RuleConditions conditions = dataset.conditionsByRule.get(rule.name);
             String query = String.format("INSERT INTO system_auth.abac_rules " +
                                          "(rule_name, permissions, user_attribute_conditions, resource_attribute_conditions, " +
-                                         "environment_attribute_conditions, effect) VALUES ('%s', {'%s'}, %s, %s, {}, '%s')",
+                                         "environment_attribute_conditions, effect) VALUES ('%s', {'%s'}, %s, %s, %s, '%s')",
                                          escape(rule.name),
                                          escape(rule.permission),
                                          cqlMap(conditions.user),
                                          cqlMap(conditions.resource),
+                                         cqlMap(conditions.environment),
                                          escape(rule.effect));
             QueryProcessor.executeInternal(query);
         }
+    }
+
+    static void registerEnvironmentAttributes(Dataset dataset)
+    {
+        EnvironmentAttributeManager manager = EnvironmentAttributeManager.getInstance();
+        for (Map.Entry<String, String> attribute : dataset.environmentAttributes.entrySet())
+            manager.registerProvider(new FixedEnvironmentAttributeProvider(attribute.getKey(), attribute.getValue()));
     }
 
     private static void clearAbacData()
@@ -186,6 +202,17 @@ public final class AbacConfigurationLoader
         return rules;
     }
 
+    private static Map<String, String> environmentAttributes(List<String[]> rows)
+    {
+        Map<String, String> attributes = new LinkedHashMap<>();
+        for (String[] row : rows)
+        {
+            if (attributes.put(row[0], row[1]) != null)
+                throw new IllegalArgumentException("Duplicate environment attribute: " + row[0]);
+        }
+        return attributes;
+    }
+
     private static List<RuleCondition> ruleConditions(List<String[]> rows)
     {
         List<RuleCondition> conditions = new ArrayList<>(rows.size());
@@ -196,7 +223,8 @@ public final class AbacConfigurationLoader
 
     private static Map<String, RuleConditions> conditionsByRule(List<String[]> ruleRows,
                                                                  List<String[]> conditionRows,
-                                                                 int conditionsPerRule)
+                                                                 int conditionsPerRule,
+                                                                 int environmentConditionsPerRule)
     {
         Map<String, RuleConditionBuilder> builders = new LinkedHashMap<>();
         for (String[] ruleRow : ruleRows)
@@ -220,10 +248,13 @@ public final class AbacConfigurationLoader
         for (Map.Entry<String, RuleConditionBuilder> entry : builders.entrySet())
         {
             RuleConditionBuilder builder = entry.getValue();
-            int conditionCount = builder.userConditions.size() + builder.resourceConditions.size();
-            if (conditionCount != conditionsPerRule)
-                throw new IllegalArgumentException("Expected " + conditionsPerRule + " conditions for rule " + entry.getKey() + ", found " + conditionCount);
-            groupedConditions.put(entry.getKey(), new RuleConditions(builder.userConditions, builder.resourceConditions));
+            int userResourceConditionCount = builder.userConditions.size() + builder.resourceConditions.size();
+            if (userResourceConditionCount != conditionsPerRule)
+                throw new IllegalArgumentException("Expected " + conditionsPerRule + " user/resource conditions for rule " + entry.getKey() + ", found " + userResourceConditionCount);
+            if (builder.environmentConditions.size() != environmentConditionsPerRule)
+                throw new IllegalArgumentException("Expected " + environmentConditionsPerRule + " environment conditions for rule " + entry.getKey() + ", found " + builder.environmentConditions.size());
+            groupedConditions.put(entry.getKey(), new RuleConditions(builder.userConditions, builder.resourceConditions,
+                                                                      builder.environmentConditions));
         }
         return groupedConditions;
     }
@@ -234,6 +265,8 @@ public final class AbacConfigurationLoader
             return builder.userConditions;
         if (entityType.equals("resource"))
             return builder.resourceConditions;
+        if (entityType.equals("environment"))
+            return builder.environmentConditions;
         throw new IllegalArgumentException("Unknown entity type for rule " + ruleName + ": " + entityType);
     }
 
@@ -274,11 +307,12 @@ public final class AbacConfigurationLoader
         public final int valuesPerAttribute;
         public final int rules;
         public final int conditionsPerRule;
+        public final int environmentConditionsPerRule;
         public final String rulePermission;
 
         private Configuration(Path directory, String generatorVersion, long seed, int users, int resources,
                               int attributesPerEntity, int valuesPerAttribute, int rules,
-                              int conditionsPerRule, String rulePermission)
+                              int conditionsPerRule, int environmentConditionsPerRule, String rulePermission)
         {
             this.directory = directory;
             this.generatorVersion = generatorVersion;
@@ -289,6 +323,7 @@ public final class AbacConfigurationLoader
             this.valuesPerAttribute = valuesPerAttribute;
             this.rules = rules;
             this.conditionsPerRule = conditionsPerRule;
+            this.environmentConditionsPerRule = environmentConditionsPerRule;
             this.rulePermission = rulePermission;
         }
     }
@@ -300,12 +335,14 @@ public final class AbacConfigurationLoader
         public final List<String> resources;
         public final List<AttributeAssignment> userAttributes;
         public final List<AttributeAssignment> resourceAttributes;
+        public final Map<String, String> environmentAttributes;
         public final List<Rule> rules;
         public final List<RuleCondition> ruleConditions;
         public final Map<String, RuleConditions> conditionsByRule;
 
         private Dataset(Configuration configuration, List<String> users, List<String> resources,
                         List<AttributeAssignment> userAttributes, List<AttributeAssignment> resourceAttributes,
+                        Map<String, String> environmentAttributes,
                         List<Rule> rules, List<RuleCondition> ruleConditions,
                         Map<String, RuleConditions> conditionsByRule)
         {
@@ -314,6 +351,7 @@ public final class AbacConfigurationLoader
             this.resources = List.copyOf(resources);
             this.userAttributes = List.copyOf(userAttributes);
             this.resourceAttributes = List.copyOf(resourceAttributes);
+            this.environmentAttributes = Map.copyOf(environmentAttributes);
             this.rules = List.copyOf(rules);
             this.ruleConditions = List.copyOf(ruleConditions);
             this.conditionsByRule = Map.copyOf(conditionsByRule);
@@ -325,8 +363,9 @@ public final class AbacConfigurationLoader
             requireCount("resources.csv", configuration.resources, resources.size());
             requireCount("user_attributes.csv", configuration.users * configuration.attributesPerEntity, userAttributes.size());
             requireCount("resource_attributes.csv", configuration.resources * configuration.attributesPerEntity, resourceAttributes.size());
+            requireCount("environment_attributes.csv", configuration.environmentConditionsPerRule, environmentAttributes.size());
             requireCount("abac_rules.csv", configuration.rules, rules.size());
-            requireCount("rule_conditions.csv", configuration.rules * configuration.conditionsPerRule, ruleConditions.size());
+            requireCount("rule_conditions.csv", configuration.rules * (configuration.conditionsPerRule + configuration.environmentConditionsPerRule), ruleConditions.size());
         }
 
         private static void requireCount(String fileName, int expected, int actual)
@@ -384,11 +423,14 @@ public final class AbacConfigurationLoader
     {
         public final Map<String, String> user;
         public final Map<String, String> resource;
+        public final Map<String, String> environment;
 
-        private RuleConditions(Map<String, String> user, Map<String, String> resource)
+        private RuleConditions(Map<String, String> user, Map<String, String> resource,
+                               Map<String, String> environment)
         {
             this.user = Map.copyOf(user);
             this.resource = Map.copyOf(resource);
+            this.environment = Map.copyOf(environment);
         }
     }
 
@@ -396,5 +438,6 @@ public final class AbacConfigurationLoader
     {
         private final Map<String, String> userConditions = new LinkedHashMap<>();
         private final Map<String, String> resourceConditions = new LinkedHashMap<>();
+        private final Map<String, String> environmentConditions = new LinkedHashMap<>();
     }
 }

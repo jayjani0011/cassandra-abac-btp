@@ -14,7 +14,7 @@ import java.util.Random;
 /** Generates reproducible ABAC policy data from a seed and configuration parameters. */
 public final class AbacConfigurationGenerator
 {
-    private static final String GENERATOR_VERSION = "2";
+    private static final String GENERATOR_VERSION = "3";
     private static final String PERMISSION = "SELECT";
     private static final String EFFECT = "GRANT";
     private static final String KEYSPACE = "abac_benchmark";
@@ -25,8 +25,8 @@ public final class AbacConfigurationGenerator
 
     public static void main(String[] args) throws Exception
     {
-        if (args.length != 8)
-            throw new IllegalArgumentException("Usage: AbacConfigurationGenerator <output-directory> <seed> <users> <resources> <attributes-per-entity> <values-per-attribute> <rules> <conditions-per-rule>");
+        if (args.length != 9)
+            throw new IllegalArgumentException("Usage: AbacConfigurationGenerator <output-directory> <seed> <users> <resources> <attributes-per-entity> <values-per-attribute> <rules> <conditions-per-rule> <environment-conditions-per-rule>");
 
         Path outputDirectory = Path.of(args[0]);
         Configuration configuration = new Configuration(Long.parseLong(args[1]),
@@ -35,7 +35,8 @@ public final class AbacConfigurationGenerator
                                                         positive(args[4], "attributes-per-entity"),
                                                         positive(args[5], "values-per-attribute"),
                                                         positive(args[6], "rules"),
-                                                        positive(args[7], "conditions-per-rule"));
+                                                        positive(args[7], "conditions-per-rule"),
+                                                        positive(args[8], "environment-conditions-per-rule"));
         configuration.validate();
 
         requireEmptyDirectory(outputDirectory);
@@ -77,6 +78,8 @@ public final class AbacConfigurationGenerator
                                           configuration.valuesPerAttribute, random);
         int[][] resourceValues = randomValues(configuration.resources, configuration.attributesPerEntity,
                                               configuration.valuesPerAttribute, random);
+        int[] environmentValues = randomValues(configuration.environmentConditionsPerRule,
+                                                configuration.valuesPerAttribute, random);
 
         int userConditionCount = (configuration.conditionsPerRule + 1) / 2;
         int resourceConditionCount = configuration.conditionsPerRule - userConditionCount;
@@ -85,10 +88,11 @@ public final class AbacConfigurationGenerator
         for (int ruleIndex = 0; ruleIndex < configuration.rules; ruleIndex++)
         {
             rules.add(randomRule(String.format(Locale.ROOT, "rule_%04d", ruleIndex + 1), configuration,
-                                 userConditionCount, resourceConditionCount, random));
+                                 userConditionCount, resourceConditionCount,
+                                 environmentValues, random));
         }
 
-        return new GeneratedConfiguration(configuration, userValues, resourceValues, rules);
+        return new GeneratedConfiguration(configuration, userValues, resourceValues, environmentValues, rules);
     }
 
     private static int[][] randomValues(int entityCount, int attributeCount, int valueCount, Random random)
@@ -100,14 +104,24 @@ public final class AbacConfigurationGenerator
         return values;
     }
 
+    private static int[] randomValues(int attributeCount, int valueCount, Random random)
+    {
+        int[] values = new int[attributeCount];
+        for (int attribute = 0; attribute < attributeCount; attribute++)
+            values[attribute] = random.nextInt(valueCount);
+        return values;
+    }
+
     private static Rule randomRule(String name, Configuration configuration, int userConditionCount,
-                                   int resourceConditionCount, Random random)
+                                   int resourceConditionCount, int[] environmentValues, Random random)
     {
         List<Condition> conditions = new ArrayList<>();
         for (int attribute : selectedAttributes(configuration.attributesPerEntity, userConditionCount, random))
             conditions.add(new Condition(EntityType.USER, attribute, random.nextInt(configuration.valuesPerAttribute)));
         for (int attribute : selectedAttributes(configuration.attributesPerEntity, resourceConditionCount, random))
             conditions.add(new Condition(EntityType.RESOURCE, attribute, random.nextInt(configuration.valuesPerAttribute)));
+        for (int attribute : selectedAttributes(environmentValues.length, environmentValues.length, random))
+            conditions.add(new Condition(EntityType.ENVIRONMENT, attribute, environmentValues[attribute]));
         return new Rule(name, conditions);
     }
 
@@ -127,6 +141,7 @@ public final class AbacConfigurationGenerator
         writeResources(outputDirectory.resolve("resources.csv"), generated.configuration.resources);
         writeAttributes(outputDirectory.resolve("user_attributes.csv"), generated.userValues, EntityType.USER);
         writeAttributes(outputDirectory.resolve("resource_attributes.csv"), generated.resourceValues, EntityType.RESOURCE);
+        writeEnvironmentAttributes(outputDirectory.resolve("environment_attributes.csv"), generated.environmentValues);
         writeRules(outputDirectory.resolve("abac_rules.csv"), generated.rules);
         writeRuleConditions(outputDirectory.resolve("rule_conditions.csv"), generated.rules);
     }
@@ -144,10 +159,12 @@ public final class AbacConfigurationGenerator
                                     "  \"values_per_attribute\": %d,\n" +
                                     "  \"rules\": %d,\n" +
                                     "  \"conditions_per_rule\": %d,\n" +
+                                    "  \"environment_conditions_per_rule\": %d,\n" +
                                     "  \"rule_permission\": \"%s\"\n" +
                                     "}\n",
                                     GENERATOR_VERSION, c.seed, c.users, c.resources, c.attributesPerEntity,
-                                    c.valuesPerAttribute, c.rules, c.conditionsPerRule, PERMISSION);
+                                    c.valuesPerAttribute, c.rules, c.conditionsPerRule,
+                                    c.environmentConditionsPerRule, PERMISSION);
         Files.writeString(path, json);
     }
 
@@ -186,6 +203,16 @@ public final class AbacConfigurationGenerator
                     writer.write(name + "," + attributeName(entityType, attribute) + "," + valueName(values[entity][attribute]) + "\n");
                 }
             }
+        }
+    }
+
+    private static void writeEnvironmentAttributes(Path path, int[] values) throws IOException
+    {
+        try (BufferedWriter writer = Files.newBufferedWriter(path))
+        {
+            writer.write("attribute_name,attribute_value\n");
+            for (int attribute = 0; attribute < values.length; attribute++)
+                writer.write(attributeName(EntityType.ENVIRONMENT, attribute) + "," + valueName(values[attribute]) + "\n");
         }
     }
 
@@ -228,7 +255,11 @@ public final class AbacConfigurationGenerator
 
     private static String attributeName(EntityType entityType, int index)
     {
-        return String.format(Locale.ROOT, entityType == EntityType.USER ? "u_attr_%02d" : "r_attr_%02d", index + 1);
+        if (entityType == EntityType.USER)
+            return String.format(Locale.ROOT, "u_attr_%02d", index + 1);
+        if (entityType == EntityType.RESOURCE)
+            return String.format(Locale.ROOT, "r_attr_%02d", index + 1);
+        return String.format(Locale.ROOT, "e_attr_%02d", index + 1);
     }
 
     private static String valueName(int index)
@@ -239,7 +270,8 @@ public final class AbacConfigurationGenerator
     private enum EntityType
     {
         USER,
-        RESOURCE
+        RESOURCE,
+        ENVIRONMENT
     }
 
     private static final class Configuration
@@ -251,9 +283,11 @@ public final class AbacConfigurationGenerator
         final int valuesPerAttribute;
         final int rules;
         final int conditionsPerRule;
+        final int environmentConditionsPerRule;
 
         private Configuration(long seed, int users, int resources, int attributesPerEntity,
-                              int valuesPerAttribute, int rules, int conditionsPerRule)
+                              int valuesPerAttribute, int rules, int conditionsPerRule,
+                              int environmentConditionsPerRule)
         {
             this.seed = seed;
             this.users = users;
@@ -262,6 +296,7 @@ public final class AbacConfigurationGenerator
             this.valuesPerAttribute = valuesPerAttribute;
             this.rules = rules;
             this.conditionsPerRule = conditionsPerRule;
+            this.environmentConditionsPerRule = environmentConditionsPerRule;
         }
 
         private void validate()
@@ -280,14 +315,16 @@ public final class AbacConfigurationGenerator
         final Configuration configuration;
         final int[][] userValues;
         final int[][] resourceValues;
+        final int[] environmentValues;
         final List<Rule> rules;
 
         private GeneratedConfiguration(Configuration configuration, int[][] userValues, int[][] resourceValues,
-                                       List<Rule> rules)
+                                       int[] environmentValues, List<Rule> rules)
         {
             this.configuration = configuration;
             this.userValues = userValues;
             this.resourceValues = resourceValues;
+            this.environmentValues = environmentValues;
             this.rules = rules;
         }
     }
