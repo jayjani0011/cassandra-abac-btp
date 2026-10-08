@@ -40,7 +40,6 @@ public final class AbacRuleCountConfigurationGenerator
         AbacConfigurationGenerator.GeneratedConfiguration generated = AbacConfigurationGenerator.generate(configuration);
         generated = withAnchoredFirstRule(generated);
 
-        writeCommon(outputDirectory.resolve("common"), generated);
         for (int ruleCount : RULE_COUNTS)
             writeRulePrefix(outputDirectory.resolve(String.format(Locale.ROOT, "rules-%03d", ruleCount)), generated, ruleCount);
     }
@@ -87,18 +86,6 @@ public final class AbacRuleCountConfigurationGenerator
         return new AbacConfigurationGenerator.GeneratedConfiguration(generated.configuration, generated.userValues,
                                                                       generated.resourceValues, generated.environmentValues,
                                                                       rules);
-    }
-
-    private static void writeCommon(Path directory, AbacConfigurationGenerator.GeneratedConfiguration generated) throws IOException
-    {
-        requirePlaceholderDirectory(directory);
-        AbacConfigurationGenerator.writeUsers(directory.resolve("users.csv"), generated.configuration.users);
-        AbacConfigurationGenerator.writeResources(directory.resolve("resources.csv"), generated.configuration.resources);
-        AbacConfigurationGenerator.writeAttributes(directory.resolve("user_attributes.csv"), generated.userValues,
-                                                   AbacConfigurationGenerator.EntityType.USER);
-        AbacConfigurationGenerator.writeAttributes(directory.resolve("resource_attributes.csv"), generated.resourceValues,
-                                                   AbacConfigurationGenerator.EntityType.RESOURCE);
-        AbacConfigurationGenerator.writeEnvironmentAttributes(directory.resolve("environment_attributes.csv"), generated.environmentValues);
     }
 
     private static void writeRulePrefix(Path directory, AbacConfigurationGenerator.GeneratedConfiguration generated,

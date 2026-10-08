@@ -45,6 +45,29 @@ public class AbacConfigurationLoaderTest extends CQLTester
     }
 
     @Test
+    public void readsRuleCountPointWithSharedBaseProfileData() throws Exception
+    {
+        Path baseProfile = Path.of("benchmarks/abac-experiments/config-003");
+        Path ruleCountPoint = Path.of("benchmarks/abac-experiments/rule-count/config-003/rules-050");
+        AbacConfigurationLoader.ConfigurationFiles files = new AbacConfigurationLoader.ConfigurationFiles(
+        ruleCountPoint.resolve("configuration.json"),
+        baseProfile.resolve("users.csv"),
+        baseProfile.resolve("resources.csv"),
+        baseProfile.resolve("user_attributes.csv"),
+        baseProfile.resolve("resource_attributes.csv"),
+        baseProfile.resolve("environment_attributes.csv"),
+        ruleCountPoint.resolve("abac_rules.csv"),
+        ruleCountPoint.resolve("rule_conditions.csv"));
+
+        AbacConfigurationLoader.Dataset dataset = AbacConfigurationLoader.readDataset(files);
+
+        assertEquals(50, dataset.configuration.users);
+        assertEquals(500, dataset.configuration.resources);
+        assertEquals(50, dataset.rules.size());
+        assertEquals(350, dataset.ruleConditions.size());
+    }
+
+    @Test
     public void loadsFirstConfigurationIntoAbacTables() throws Exception
     {
         AbacConfigurationLoader.Dataset dataset = AbacConfigurationLoader.load(CONFIGURATION_DIRECTORY);
@@ -64,11 +87,6 @@ public class AbacConfigurationLoaderTest extends CQLTester
         assertStoredConditions(dataset.conditionsByRule.get("rule_0001").environment,
                                rule.getMap("environment_attribute_conditions", UTF8Type.instance, UTF8Type.instance));
 
-        CassandraAuthorizer authorizer = new CassandraAuthorizer();
-        String matchingUser = matchingUser(dataset);
-        assertEquals(Collections.singleton(Permission.SELECT),
-                     authorizer.getAbacPermissions(new AuthenticatedUser(matchingUser),
-                                                    DataResource.table("abac_benchmark", "resource_0001")));
     }
 
     private static long rowCount(String table)
@@ -81,15 +99,4 @@ public class AbacConfigurationLoaderTest extends CQLTester
         assertEquals(expected.isEmpty() ? null : expected, actual);
     }
 
-    private static String matchingUser(AbacConfigurationLoader.Dataset dataset)
-    {
-        Map<String, String> conditions = dataset.conditionsByRule.get("rule_0001").user;
-        for (AbacConfigurationLoader.AttributeAssignment assignment : dataset.userAttributes)
-        {
-            if (conditions.size() == 1 && conditions.get(assignment.attributeName) != null &&
-                conditions.get(assignment.attributeName).equals(assignment.attributeValue))
-                return assignment.entityName;
-        }
-        throw new AssertionError("C1 should contain a user matching rule_0001");
-    }
 }

@@ -1,0 +1,12 @@
+rule_name,entity_type,attribute_name,required_value
+rule_0001,user,u_attr_03,value_04
+rule_0001,user,u_attr_07,value_08
+rule_0001,user,u_attr_04,value_14
+rule_0001,user,u_attr_02,value_08
+rule_0001,resource,r_attr_08,value_08
+rule_0001,resource,r_attr_05,value_07
+rule_0001,resource,r_attr_01,value_10
+rule_0001,resource,r_attr_03,value_04
+rule_0001,environment,e_attr_03,value_11
+rule_0001,environment,e_attr_01,value_12
+rule_0001,environment,e_attr_02,value_12
