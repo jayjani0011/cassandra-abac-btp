@@ -15,33 +15,21 @@ import org.apache.cassandra.service.EnvironmentAttributeManager;
 
 public final class AbacConfigurationLoader
 {
-    private static final List<String> REQUIRED_FILES = List.of("configuration.json",
-                                                               "users.csv",
-                                                               "resources.csv",
-                                                               "user_attributes.csv",
-                                                               "resource_attributes.csv",
-                                                               "environment_attributes.csv",
-                                                               "abac_rules.csv",
-                                                               "rule_conditions.csv");
-
     private AbacConfigurationLoader()
     {
     }
 
     public static Configuration readConfiguration(Path configurationDirectory) throws IOException
     {
-        if (!Files.isDirectory(configurationDirectory))
-            throw new IllegalArgumentException("Configuration directory does not exist: " + configurationDirectory);
+        return readConfiguration(ConfigurationFiles.fromDirectory(configurationDirectory));
+    }
 
-        for (String fileName : REQUIRED_FILES)
-        {
-            Path file = configurationDirectory.resolve(fileName);
-            if (!Files.isRegularFile(file))
-                throw new IllegalArgumentException("Missing required configuration file: " + file);
-        }
+    public static Configuration readConfiguration(ConfigurationFiles files) throws IOException
+    {
+        validateFiles(files);
 
-        String json = Files.readString(configurationDirectory.resolve("configuration.json"));
-        return new Configuration(configurationDirectory,
+        String json = Files.readString(files.configurationJson);
+        return new Configuration(files,
                                  stringField(json, "generator_version"),
                                  longField(json, "seed"),
                                  intField(json, "users"),
@@ -56,19 +44,24 @@ public final class AbacConfigurationLoader
 
     public static Dataset readDataset(Path configurationDirectory) throws IOException
     {
-        Configuration configuration = readConfiguration(configurationDirectory);
+        return readDataset(ConfigurationFiles.fromDirectory(configurationDirectory));
+    }
 
-        List<String[]> userRows = readCsv(configuration.directory.resolve("users.csv"), "user_name", 1);
-        List<String[]> resourceRows = readCsv(configuration.directory.resolve("resources.csv"), "resource_name", 1);
-        List<String[]> userAttributeRows = readCsv(configuration.directory.resolve("user_attributes.csv"),
+    public static Dataset readDataset(ConfigurationFiles files) throws IOException
+    {
+        Configuration configuration = readConfiguration(files);
+
+        List<String[]> userRows = readCsv(files.users, "user_name", 1);
+        List<String[]> resourceRows = readCsv(files.resources, "resource_name", 1);
+        List<String[]> userAttributeRows = readCsv(files.userAttributes,
                                                    "user_name,attribute_name,attribute_value", 3);
-        List<String[]> resourceAttributeRows = readCsv(configuration.directory.resolve("resource_attributes.csv"),
+        List<String[]> resourceAttributeRows = readCsv(files.resourceAttributes,
                                                        "resource_name,attribute_name,attribute_value", 3);
-        List<String[]> environmentAttributeRows = readCsv(configuration.directory.resolve("environment_attributes.csv"),
+        List<String[]> environmentAttributeRows = readCsv(files.environmentAttributes,
                                                           "attribute_name,attribute_value", 2);
-        List<String[]> ruleRows = readCsv(configuration.directory.resolve("abac_rules.csv"),
+        List<String[]> ruleRows = readCsv(files.rules,
                                           "rule_name,effect,permission", 3);
-        List<String[]> conditionRows = readCsv(configuration.directory.resolve("rule_conditions.csv"),
+        List<String[]> conditionRows = readCsv(files.ruleConditions,
                                                "rule_name,entity_type,attribute_name,required_value", 4);
 
         Dataset dataset = new Dataset(configuration,
@@ -87,7 +80,12 @@ public final class AbacConfigurationLoader
 
     public static Dataset load(Path configurationDirectory) throws IOException
     {
-        Dataset dataset = readDataset(configurationDirectory);
+        return load(ConfigurationFiles.fromDirectory(configurationDirectory));
+    }
+
+    public static Dataset load(ConfigurationFiles files) throws IOException
+    {
+        Dataset dataset = readDataset(files);
         load(dataset);
         return dataset;
     }
@@ -159,6 +157,24 @@ public final class AbacConfigurationLoader
     private static String escape(String value)
     {
         return value.replace("'", "''");
+    }
+
+    private static void validateFiles(ConfigurationFiles files)
+    {
+        requireFile(files.configurationJson);
+        requireFile(files.users);
+        requireFile(files.resources);
+        requireFile(files.userAttributes);
+        requireFile(files.resourceAttributes);
+        requireFile(files.environmentAttributes);
+        requireFile(files.rules);
+        requireFile(files.ruleConditions);
+    }
+
+    private static void requireFile(Path file)
+    {
+        if (!Files.isRegularFile(file))
+            throw new IllegalArgumentException("Missing required configuration file: " + file);
     }
 
     private static List<String[]> readCsv(Path file, String expectedHeader, int columns) throws IOException
@@ -296,9 +312,50 @@ public final class AbacConfigurationLoader
         return matcher.group(1);
     }
 
+    public static final class ConfigurationFiles
+    {
+        public final Path configurationJson;
+        public final Path users;
+        public final Path resources;
+        public final Path userAttributes;
+        public final Path resourceAttributes;
+        public final Path environmentAttributes;
+        public final Path rules;
+        public final Path ruleConditions;
+
+        public ConfigurationFiles(Path configurationJson, Path users, Path resources,
+                                  Path userAttributes, Path resourceAttributes, Path environmentAttributes,
+                                  Path rules, Path ruleConditions)
+        {
+            this.configurationJson = configurationJson;
+            this.users = users;
+            this.resources = resources;
+            this.userAttributes = userAttributes;
+            this.resourceAttributes = resourceAttributes;
+            this.environmentAttributes = environmentAttributes;
+            this.rules = rules;
+            this.ruleConditions = ruleConditions;
+        }
+
+        public static ConfigurationFiles fromDirectory(Path directory)
+        {
+            if (!Files.isDirectory(directory))
+                throw new IllegalArgumentException("Configuration directory does not exist: " + directory);
+
+            return new ConfigurationFiles(directory.resolve("configuration.json"),
+                                          directory.resolve("users.csv"),
+                                          directory.resolve("resources.csv"),
+                                          directory.resolve("user_attributes.csv"),
+                                          directory.resolve("resource_attributes.csv"),
+                                          directory.resolve("environment_attributes.csv"),
+                                          directory.resolve("abac_rules.csv"),
+                                          directory.resolve("rule_conditions.csv"));
+        }
+    }
+
     public static final class Configuration
     {
-        public final Path directory;
+        public final ConfigurationFiles files;
         public final String generatorVersion;
         public final long seed;
         public final int users;
@@ -310,11 +367,11 @@ public final class AbacConfigurationLoader
         public final int environmentConditionsPerRule;
         public final String rulePermission;
 
-        private Configuration(Path directory, String generatorVersion, long seed, int users, int resources,
+        private Configuration(ConfigurationFiles files, String generatorVersion, long seed, int users, int resources,
                               int attributesPerEntity, int valuesPerAttribute, int rules,
                               int conditionsPerRule, int environmentConditionsPerRule, String rulePermission)
         {
-            this.directory = directory;
+            this.files = files;
             this.generatorVersion = generatorVersion;
             this.seed = seed;
             this.users = users;

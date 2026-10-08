@@ -24,6 +24,27 @@ public class AbacConfigurationLoaderTest extends CQLTester
     private static final Path CONFIGURATION_DIRECTORY = Path.of("benchmarks/abac-experiments/config-001");
 
     @Test
+    public void readsConfigurationFromIndividualFiles() throws Exception
+    {
+        AbacConfigurationLoader.ConfigurationFiles files = new AbacConfigurationLoader.ConfigurationFiles(
+        CONFIGURATION_DIRECTORY.resolve("configuration.json"),
+        CONFIGURATION_DIRECTORY.resolve("users.csv"),
+        CONFIGURATION_DIRECTORY.resolve("resources.csv"),
+        CONFIGURATION_DIRECTORY.resolve("user_attributes.csv"),
+        CONFIGURATION_DIRECTORY.resolve("resource_attributes.csv"),
+        CONFIGURATION_DIRECTORY.resolve("environment_attributes.csv"),
+        CONFIGURATION_DIRECTORY.resolve("abac_rules.csv"),
+        CONFIGURATION_DIRECTORY.resolve("rule_conditions.csv"));
+
+        AbacConfigurationLoader.Dataset dataset = AbacConfigurationLoader.readDataset(files);
+
+        assertEquals(10, dataset.configuration.users);
+        assertEquals(100, dataset.configuration.resources);
+        assertEquals(1, dataset.rules.size());
+        assertEquals(files.rules, dataset.configuration.files.rules);
+    }
+
+    @Test
     public void loadsFirstConfigurationIntoAbacTables() throws Exception
     {
         AbacConfigurationLoader.Dataset dataset = AbacConfigurationLoader.load(CONFIGURATION_DIRECTORY);
