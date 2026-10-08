@@ -71,7 +71,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static GeneratedConfiguration generate(Configuration configuration)
+    static GeneratedConfiguration generate(Configuration configuration)
     {
         Random random = new Random(configuration.seed);
         int[][] userValues = randomValues(configuration.users, configuration.attributesPerEntity,
@@ -148,7 +148,11 @@ public final class AbacConfigurationGenerator
 
     private static void writeConfiguration(Path path, GeneratedConfiguration generated) throws IOException
     {
-        Configuration c = generated.configuration;
+        writeConfiguration(path, generated.configuration, generated.configuration.rules);
+    }
+
+    static void writeConfiguration(Path path, Configuration c, int rules) throws IOException
+    {
         String json = String.format(Locale.ROOT,
                                     "{\n" +
                                     "  \"generator_version\": \"%s\",\n" +
@@ -163,12 +167,12 @@ public final class AbacConfigurationGenerator
                                     "  \"rule_permission\": \"%s\"\n" +
                                     "}\n",
                                     GENERATOR_VERSION, c.seed, c.users, c.resources, c.attributesPerEntity,
-                                    c.valuesPerAttribute, c.rules, c.conditionsPerRule,
+                                    c.valuesPerAttribute, rules, c.conditionsPerRule,
                                     c.environmentConditionsPerRule, PERMISSION);
         Files.writeString(path, json);
     }
 
-    private static void writeUsers(Path path, int userCount) throws IOException
+    static void writeUsers(Path path, int userCount) throws IOException
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
@@ -178,7 +182,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static void writeResources(Path path, int resourceCount) throws IOException
+    static void writeResources(Path path, int resourceCount) throws IOException
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
@@ -188,7 +192,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static void writeAttributes(Path path, int[][] values, EntityType entityType) throws IOException
+    static void writeAttributes(Path path, int[][] values, EntityType entityType) throws IOException
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
@@ -206,7 +210,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static void writeEnvironmentAttributes(Path path, int[] values) throws IOException
+    static void writeEnvironmentAttributes(Path path, int[] values) throws IOException
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
@@ -216,7 +220,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static void writeRules(Path path, List<Rule> rules) throws IOException
+    static void writeRules(Path path, List<Rule> rules) throws IOException
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
@@ -226,7 +230,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static void writeRuleConditions(Path path, List<Rule> rules) throws IOException
+    static void writeRuleConditions(Path path, List<Rule> rules) throws IOException
     {
         try (BufferedWriter writer = Files.newBufferedWriter(path))
         {
@@ -267,14 +271,14 @@ public final class AbacConfigurationGenerator
         return String.format(Locale.ROOT, "value_%02d", index);
     }
 
-    private enum EntityType
+    enum EntityType
     {
         USER,
         RESOURCE,
         ENVIRONMENT
     }
 
-    private static final class Configuration
+    static final class Configuration
     {
         final long seed;
         final int users;
@@ -285,9 +289,9 @@ public final class AbacConfigurationGenerator
         final int conditionsPerRule;
         final int environmentConditionsPerRule;
 
-        private Configuration(long seed, int users, int resources, int attributesPerEntity,
-                              int valuesPerAttribute, int rules, int conditionsPerRule,
-                              int environmentConditionsPerRule)
+        Configuration(long seed, int users, int resources, int attributesPerEntity,
+                      int valuesPerAttribute, int rules, int conditionsPerRule,
+                      int environmentConditionsPerRule)
         {
             this.seed = seed;
             this.users = users;
@@ -299,7 +303,7 @@ public final class AbacConfigurationGenerator
             this.environmentConditionsPerRule = environmentConditionsPerRule;
         }
 
-        private void validate()
+        void validate()
         {
             int userConditions = (conditionsPerRule + 1) / 2;
             int resourceConditions = conditionsPerRule - userConditions;
@@ -310,7 +314,7 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static final class GeneratedConfiguration
+    static final class GeneratedConfiguration
     {
         final Configuration configuration;
         final int[][] userValues;
@@ -318,8 +322,8 @@ public final class AbacConfigurationGenerator
         final int[] environmentValues;
         final List<Rule> rules;
 
-        private GeneratedConfiguration(Configuration configuration, int[][] userValues, int[][] resourceValues,
-                                       int[] environmentValues, List<Rule> rules)
+        GeneratedConfiguration(Configuration configuration, int[][] userValues, int[][] resourceValues,
+                               int[] environmentValues, List<Rule> rules)
         {
             this.configuration = configuration;
             this.userValues = userValues;
@@ -329,25 +333,25 @@ public final class AbacConfigurationGenerator
         }
     }
 
-    private static final class Rule
+    static final class Rule
     {
         final String name;
         final List<Condition> conditions;
 
-        private Rule(String name, List<Condition> conditions)
+        Rule(String name, List<Condition> conditions)
         {
             this.name = name;
             this.conditions = conditions;
         }
     }
 
-    private static final class Condition
+    static final class Condition
     {
         final EntityType entityType;
         final int attributeIndex;
         final int requiredValue;
 
-        private Condition(EntityType entityType, int attributeIndex, int requiredValue)
+        Condition(EntityType entityType, int attributeIndex, int requiredValue)
         {
             this.entityType = entityType;
             this.attributeIndex = attributeIndex;
