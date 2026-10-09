@@ -1,0 +1,12 @@
+{
+  "generator_version": "3",
+  "seed": 20261004,
+  "users": 25,
+  "resources": 250,
+  "attributes_per_entity": 2,
+  "values_per_attribute": 4,
+  "rules": 10,
+  "conditions_per_rule": 2,
+  "environment_conditions_per_rule": 3,
+  "rule_permission": "SELECT"
+}

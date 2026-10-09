@@ -12,15 +12,7 @@ import java.util.regex.Pattern;
 /** Produces environmental-condition-count variants from each saved C1-C6 profile. */
 public final class AbacEnvironmentCountConfigurationGenerator
 {
-    private static final int[][] ENVIRONMENT_COUNTS =
-    {
-    { 1, 2 },
-    { 1, 2 },
-    { 1, 2, 3 },
-    { 1, 2, 3 },
-    { 1, 2, 3, 4, 5 },
-    { 1, 2, 3, 4, 5 }
-    };
+    private static final int[] ENVIRONMENT_COUNTS = { 1, 2, 3, 4, 5 };
 
     private AbacEnvironmentCountConfigurationGenerator()
     {
@@ -36,7 +28,7 @@ public final class AbacEnvironmentCountConfigurationGenerator
         for (int profile = 1; profile <= 6; profile++)
         {
             String name = String.format(Locale.ROOT, "config-%03d", profile);
-            generateProfile(sourceRoot.resolve(name).resolve("configuration.json"), outputRoot.resolve(name), ENVIRONMENT_COUNTS[profile - 1]);
+            generateProfile(sourceRoot.resolve(name).resolve("configuration.json"), outputRoot.resolve(name), ENVIRONMENT_COUNTS);
         }
         writeManifest(outputRoot);
     }
@@ -94,7 +86,7 @@ public final class AbacEnvironmentCountConfigurationGenerator
             for (int profile = 1; profile <= 6; profile++)
             {
                 String base = String.format(Locale.ROOT, "../config-%03d", profile);
-                for (int environmentCount : ENVIRONMENT_COUNTS[profile - 1])
+                for (int environmentCount : ENVIRONMENT_COUNTS)
                 {
                     String variant = String.format(Locale.ROOT, "config-%03d/environment-%02d", profile, environmentCount);
                     writer.write(String.format(Locale.ROOT,
