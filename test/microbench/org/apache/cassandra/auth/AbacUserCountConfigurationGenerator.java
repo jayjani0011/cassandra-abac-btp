@@ -12,15 +12,7 @@ import java.util.regex.Pattern;
 /** Produces user-count variants while keeping every other saved profile input unchanged. */
 public final class AbacUserCountConfigurationGenerator
 {
-    private static final int[][] USER_COUNTS =
-    {
-    { 1, 2, 5, 10 },
-    { 1, 5, 10, 15, 25 },
-    { 1, 10, 25, 50 },
-    { 1, 25, 50, 75, 100 },
-    { 1, 50, 100, 150, 200, 250 },
-    { 1, 100, 200, 300, 400, 500 }
-    };
+    private static final int[] USER_COUNTS = { 10, 25, 50, 100, 250, 500 };
 
     private AbacUserCountConfigurationGenerator()
     {
@@ -36,7 +28,7 @@ public final class AbacUserCountConfigurationGenerator
         for (int profile = 1; profile <= 6; profile++)
         {
             String name = String.format(Locale.ROOT, "config-%03d", profile);
-            generateProfile(sourceRoot.resolve(name).resolve("configuration.json"), outputRoot.resolve(name), USER_COUNTS[profile - 1]);
+            generateProfile(sourceRoot.resolve(name).resolve("configuration.json"), outputRoot.resolve(name), USER_COUNTS);
         }
         writeManifest(outputRoot);
     }
@@ -93,7 +85,7 @@ public final class AbacUserCountConfigurationGenerator
             for (int profile = 1; profile <= 6; profile++)
             {
                 String base = String.format(Locale.ROOT, "../config-%03d", profile);
-                for (int userCount : USER_COUNTS[profile - 1])
+                for (int userCount : USER_COUNTS)
                 {
                     String variant = String.format(Locale.ROOT, "config-%03d/users-%03d", profile, userCount);
                     writer.write(String.format(Locale.ROOT,
