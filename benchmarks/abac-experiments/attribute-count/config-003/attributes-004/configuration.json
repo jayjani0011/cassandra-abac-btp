@@ -6,7 +6,7 @@
   "attributes_per_entity": 4,
   "values_per_attribute": 8,
   "rules": 50,
-  "conditions_per_rule": 4,
+  "conditions_per_rule": 1,
   "environment_conditions_per_rule": 3,
   "rule_permission": "SELECT"
 }
