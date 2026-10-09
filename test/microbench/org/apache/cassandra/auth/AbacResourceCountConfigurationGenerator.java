@@ -12,15 +12,7 @@ import java.util.regex.Pattern;
 /** Produces resource-count variants while keeping every other saved profile input unchanged. */
 public final class AbacResourceCountConfigurationGenerator
 {
-    private static final int[][] RESOURCE_COUNTS =
-    {
-    { 10, 20, 50, 100 },
-    { 25, 50, 100, 150, 250 },
-    { 50, 100, 250, 500 },
-    { 100, 250, 500, 750, 1000 },
-    { 250, 500, 1000, 1500, 2000, 2500 },
-    { 500, 1000, 2000, 3000, 4000, 5000 }
-    };
+    private static final int[] RESOURCE_COUNTS = { 100, 250, 500, 1000, 2500, 5000 };
 
     private AbacResourceCountConfigurationGenerator()
     {
@@ -36,7 +28,7 @@ public final class AbacResourceCountConfigurationGenerator
         for (int profile = 1; profile <= 6; profile++)
         {
             String name = String.format(Locale.ROOT, "config-%03d", profile);
-            generateProfile(sourceRoot.resolve(name).resolve("configuration.json"), outputRoot.resolve(name), RESOURCE_COUNTS[profile - 1]);
+            generateProfile(sourceRoot.resolve(name).resolve("configuration.json"), outputRoot.resolve(name), RESOURCE_COUNTS);
         }
         writeManifest(outputRoot);
     }
@@ -93,7 +85,7 @@ public final class AbacResourceCountConfigurationGenerator
             for (int profile = 1; profile <= 6; profile++)
             {
                 String base = String.format(Locale.ROOT, "../config-%03d", profile);
-                for (int resourceCount : RESOURCE_COUNTS[profile - 1])
+                for (int resourceCount : RESOURCE_COUNTS)
                 {
                     String variant = String.format(Locale.ROOT, "config-%03d/resources-%04d", profile, resourceCount);
                     writer.write(String.format(Locale.ROOT,
