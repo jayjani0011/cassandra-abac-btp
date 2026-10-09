@@ -12,14 +12,15 @@ import java.util.regex.Pattern;
 /** Produces attribute-count variants from each saved C1-C6 profile. */
 public final class AbacAttributeCountConfigurationGenerator
 {
+    private static final int CONDITIONS_PER_RULE = 1;
     private static final int[][] ATTRIBUTE_COUNTS =
     {
     { 1, 2, 4, 8, 12, 16 },
     { 1, 2, 4, 8, 12, 16 },
-    { 2, 4, 8, 12, 16 },
-    { 4, 8, 12, 16 },
-    { 6, 8, 12, 16 },
-    { 8, 12, 16 }
+    { 1, 2, 4, 8, 12, 16 },
+    { 1, 2, 4, 8, 12, 16 },
+    { 1, 2, 4, 8, 12, 16 },
+    { 1, 2, 4, 8, 12, 16 }
     };
 
     private AbacAttributeCountConfigurationGenerator()
@@ -48,7 +49,7 @@ public final class AbacAttributeCountConfigurationGenerator
         {
             AbacConfigurationGenerator.Configuration variant = new AbacConfigurationGenerator.Configuration(
             source.seed, source.users, source.resources, attributeCount, source.valuesPerAttribute, source.rules,
-            source.conditionsPerRule, source.environmentConditionsPerRule);
+            CONDITIONS_PER_RULE, source.environmentConditionsPerRule);
             variant.validate();
             writeVariant(outputDirectory.resolve(String.format(Locale.ROOT, "attributes-%03d", attributeCount)),
                          withAnchoredFirstRule(AbacConfigurationGenerator.generate(variant)));
