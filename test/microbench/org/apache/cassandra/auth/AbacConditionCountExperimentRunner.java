@@ -34,13 +34,19 @@ public final class AbacConditionCountExperimentRunner
 
     public static void main(String[] args) throws Exception
     {
+        run(args, "ABAC conditions-per-rule", "conditions_per_rule");
+        System.exit(0);
+    }
+
+    static void run(String[] args, String experimentName, String factorColumn) throws Exception
+    {
         if (args.length != 2)
             throw new IllegalArgumentException("Usage: AbacConditionCountExperimentRunner <manifest.csv> <output-directory>");
 
         Path manifest = Path.of(args[0]);
         Path outputDirectory = Path.of(args[1]);
         Files.createDirectories(outputDirectory);
-        List<Point> points = readManifest(manifest);
+        List<Point> points = readManifest(manifest, factorColumn);
         List<Point> executionOrder = new ArrayList<>(points);
         Collections.shuffle(executionOrder, new Random(ORDER_SEED));
 
@@ -52,9 +58,9 @@ public final class AbacConditionCountExperimentRunner
              BufferedWriter runs = Files.newBufferedWriter(outputDirectory.resolve("run_summary.csv"));
              BufferedWriter summary = Files.newBufferedWriter(outputDirectory.resolve("point_summary.csv")))
         {
-            raw.write("profile,conditions_per_rule,point_id,run,sample,elapsed_ns\n");
-            runs.write("profile,conditions_per_rule,point_id,run,mean_ns,median_ns,p95_ns,min_ns,max_ns\n");
-            summary.write("profile,conditions_per_rule,point_id,measured_runs,mean_ns,median_ns,stddev_ns,min_ns,max_ns\n");
+            raw.write("profile," + factorColumn + ",point_id,run,sample,elapsed_ns\n");
+            runs.write("profile," + factorColumn + ",point_id,run,mean_ns,median_ns,p95_ns,min_ns,max_ns\n");
+            summary.write("profile," + factorColumn + ",point_id,measured_runs,mean_ns,median_ns,stddev_ns,min_ns,max_ns\n");
 
             CassandraAuthorizer authorizer = new CassandraAuthorizer();
             authorizer.setup();
@@ -76,8 +82,7 @@ public final class AbacConditionCountExperimentRunner
             CQLTester.tearDownClass();
         }
 
-        Files.writeString(outputDirectory.resolve("metadata.txt"), metadata(manifest, points));
-        System.exit(0);
+        Files.writeString(outputDirectory.resolve("metadata.txt"), metadata(manifest, points, experimentName));
     }
 
     private static List<Long> runPoint(Point point, CassandraAuthorizer authorizer, BufferedWriter raw,
@@ -124,9 +129,9 @@ public final class AbacConditionCountExperimentRunner
         return samples;
     }
 
-    private static List<Point> readManifest(Path manifest) throws IOException
+    private static List<Point> readManifest(Path manifest, String factorColumn) throws IOException
     {
-        String header = "profile,conditions_per_rule,point_id,configuration_json,users_csv,resources_csv,user_attributes_csv,resource_attributes_csv,environment_attributes_csv,abac_rules_csv,rule_conditions_csv";
+        String header = "profile," + factorColumn + ",point_id,configuration_json,users_csv,resources_csv,user_attributes_csv,resource_attributes_csv,environment_attributes_csv,abac_rules_csv,rule_conditions_csv";
         List<String> lines = Files.readAllLines(manifest);
         if (lines.isEmpty() || !lines.get(0).equals(header))
             throw new IllegalArgumentException("Unexpected manifest header: " + manifest);
@@ -152,14 +157,14 @@ public final class AbacConditionCountExperimentRunner
         return path.isAbsolute() ? path : parent.resolve(path).normalize();
     }
 
-    private static String metadata(Path manifest, List<Point> points)
+    private static String metadata(Path manifest, List<Point> points, String experimentName)
     {
         return String.format(Locale.ROOT,
-                             "experiment=ABAC conditions-per-rule%nmanifest=%s%npoints=%d%nmethod=getAbacPermissions(AuthenticatedUser, IResource)%n" +
+                             "experiment=%s%nmanifest=%s%npoints=%d%nmethod=getAbacPermissions(AuthenticatedUser, IResource)%n" +
                              "loader_calls_per_point=1%nanchor_request=benchmark_user_0001,data/abac_benchmark/resource_0001,SELECT%n" +
                              "discarded_runs=%d%nauthorizations_per_run=%d%nmeasured_runs=%d%npoint_order=randomized; seed=%d%n" +
                              "timed_interval=one getAbacPermissions call; loading, correctness checks, and warm-up calls excluded%n",
-                             manifest, points.size(), DISCARDED_RUNS, AUTHORIZATIONS_PER_RUN, MEASURED_RUNS, ORDER_SEED);
+                             experimentName, manifest, points.size(), DISCARDED_RUNS, AUTHORIZATIONS_PER_RUN, MEASURED_RUNS, ORDER_SEED);
     }
 
     private static final class Point
