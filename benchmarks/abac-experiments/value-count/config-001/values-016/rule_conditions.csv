@@ -1,0 +1,4 @@
+rule_name,entity_type,attribute_name,required_value
+rule_0001,user,u_attr_01,value_09
+rule_0001,environment,e_attr_02,value_15
+rule_0001,environment,e_attr_01,value_11
