@@ -1,0 +1,11 @@
+experiment=ABAC resource-count
+manifest=benchmarks/abac-experiments/resource-count/points.csv
+points=36
+method=getAbacPermissions(AuthenticatedUser, IResource)
+loader_calls_per_point=1
+anchor_request=benchmark_user_0001,data/abac_benchmark/resource_0001,SELECT
+discarded_runs=2
+authorizations_per_run=100
+measured_runs=8
+point_order=randomized; seed=20261010
+timed_interval=one getAbacPermissions call; loading, correctness checks, and warm-up calls excluded
