@@ -3,6 +3,8 @@ package org.apache.cassandra.auth;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +44,7 @@ public final class AbacUserCountConfigurationGenerator
     private static void generateProfile(Path sourceConfiguration, Path outputDirectory, int[] userCounts) throws IOException
     {
         AbacConfigurationGenerator.Configuration source = readConfiguration(sourceConfiguration);
+        AbacConfigurationGenerator.GeneratedConfiguration anchoredSource = withAnchoredFirstRule(AbacConfigurationGenerator.generate(source));
         for (int userCount : userCounts)
         {
             AbacConfigurationGenerator.Configuration variant = new AbacConfigurationGenerator.Configuration(
@@ -55,7 +58,31 @@ public final class AbacUserCountConfigurationGenerator
             AbacConfigurationGenerator.writeUsers(directory.resolve("users.csv"), userCount);
             AbacConfigurationGenerator.writeAttributes(directory.resolve("user_attributes.csv"), generated.userValues,
                                                         AbacConfigurationGenerator.EntityType.USER);
+            AbacConfigurationGenerator.writeRules(directory.resolve("abac_rules.csv"), anchoredSource.rules);
+            AbacConfigurationGenerator.writeRuleConditions(directory.resolve("rule_conditions.csv"), anchoredSource.rules);
         }
+    }
+
+    private static AbacConfigurationGenerator.GeneratedConfiguration withAnchoredFirstRule(AbacConfigurationGenerator.GeneratedConfiguration generated)
+    {
+        List<AbacConfigurationGenerator.Rule> rules = new ArrayList<>(generated.rules);
+        AbacConfigurationGenerator.Rule firstRule = rules.get(0);
+        List<AbacConfigurationGenerator.Condition> conditions = new ArrayList<>(firstRule.conditions.size());
+        for (AbacConfigurationGenerator.Condition condition : firstRule.conditions)
+        {
+            int value = condition.requiredValue;
+            if (condition.entityType == AbacConfigurationGenerator.EntityType.USER)
+                value = generated.userValues[0][condition.attributeIndex];
+            else if (condition.entityType == AbacConfigurationGenerator.EntityType.RESOURCE)
+                value = generated.resourceValues[0][condition.attributeIndex];
+            else if (condition.entityType == AbacConfigurationGenerator.EntityType.ENVIRONMENT)
+                value = generated.environmentValues[condition.attributeIndex];
+            conditions.add(new AbacConfigurationGenerator.Condition(condition.entityType, condition.attributeIndex, value));
+        }
+        rules.set(0, new AbacConfigurationGenerator.Rule(firstRule.name, conditions));
+        return new AbacConfigurationGenerator.GeneratedConfiguration(generated.configuration, generated.userValues,
+                                                                      generated.resourceValues, generated.environmentValues,
+                                                                      rules);
     }
 
     private static void writeManifest(Path outputRoot) throws IOException
@@ -72,7 +99,7 @@ public final class AbacUserCountConfigurationGenerator
                     writer.write(String.format(Locale.ROOT,
                                                "C%d,%d,C%d-users-%03d,%s/configuration.json,%s/users.csv,%s/resources.csv,%s/user_attributes.csv,%s/resource_attributes.csv,%s/environment_attributes.csv,%s/abac_rules.csv,%s/rule_conditions.csv%n",
                                                profile, userCount, profile, userCount, variant, variant, base,
-                                               variant, base, base, base, base));
+                                               variant, base, base, variant, variant));
                 }
             }
         }
