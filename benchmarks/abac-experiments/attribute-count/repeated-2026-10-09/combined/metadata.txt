@@ -1,0 +1,10 @@
+experiment=ABAC attribute-count repeated runs
+repeat_count=3
+retained_batches_per_point_per_repeat=8
+retained_batches_per_point_total=24
+authorizations_per_batch=100
+timed_interval=one getAbacPermissions call; loading and warm-up calls excluded
+sources=
+benchmarks/abac-experiments/attribute-count/repeated-2026-10-09/repeat-001
+benchmarks/abac-experiments/attribute-count/repeated-2026-10-09/repeat-002
+benchmarks/abac-experiments/attribute-count/repeated-2026-10-09/repeat-003
