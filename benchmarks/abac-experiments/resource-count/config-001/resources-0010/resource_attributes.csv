@@ -1,0 +1,11 @@
+resource_name,attribute_name,attribute_value
+data/abac_benchmark/resource_0001,r_attr_01,value_00
+data/abac_benchmark/resource_0002,r_attr_01,value_00
+data/abac_benchmark/resource_0003,r_attr_01,value_00
+data/abac_benchmark/resource_0004,r_attr_01,value_01
+data/abac_benchmark/resource_0005,r_attr_01,value_01
+data/abac_benchmark/resource_0006,r_attr_01,value_01
+data/abac_benchmark/resource_0007,r_attr_01,value_00
+data/abac_benchmark/resource_0008,r_attr_01,value_01
+data/abac_benchmark/resource_0009,r_attr_01,value_00
+data/abac_benchmark/resource_0010,r_attr_01,value_00
