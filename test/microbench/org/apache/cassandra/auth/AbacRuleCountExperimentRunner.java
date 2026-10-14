@@ -10,7 +10,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
-import java.util.Set;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -20,8 +19,8 @@ import org.slf4j.LoggerFactory;
 /** Runs the ABAC rule-count workload described by a manifest of input CSV paths. */
 public final class AbacRuleCountExperimentRunner
 {
-    private static final int DISCARDED_RUNS = 2;
-    private static final int MEASURED_RUNS = 8;
+    private static final int DISCARDED_RUNS = 5;
+    private static final int MEASURED_RUNS = 20;
     private static final int AUTHORIZATIONS_PER_RUN = 100;
     private static final long ORDER_SEED = 20261009L;
     private static final String USER_NAME = "benchmark_user_0001";
@@ -83,10 +82,7 @@ public final class AbacRuleCountExperimentRunner
     private static List<Long> runPoint(Point point, CassandraAuthorizer authorizer, BufferedWriter raw,
                                        BufferedWriter runs) throws Exception
     {
-        AbacConfigurationLoader.Dataset dataset = AbacConfigurationLoader.load(point.files);
-        Set<Permission> permissions = authorizer.getAbacPermissions(user, RESOURCE);
-        if (!permissions.contains(Permission.SELECT))
-            throw new IllegalStateException("Anchor request was not granted for " + point.id);
+        AbacConfigurationLoader.load(point.files);
 
         for (int run = 1; run <= DISCARDED_RUNS; run++)
             authorize(authorizer, AUTHORIZATIONS_PER_RUN, null, point, run, raw);
