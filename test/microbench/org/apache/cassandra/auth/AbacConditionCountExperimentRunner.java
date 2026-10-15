@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
 /** Runs the ABAC conditions-per-rule workload described by a manifest of input CSV paths. */
 public final class AbacConditionCountExperimentRunner
 {
-    private static final int DISCARDED_RUNS = 5;
-    private static final int MEASURED_RUNS = 20;
+    private static final int DISCARDED_RUNS = 10;
+    private static final int MEASURED_RUNS = 100;
     private static final int AUTHORIZATIONS_PER_RUN = 100;
     private static final long ORDER_SEED = 20261010L;
     private static final String USER_NAME = "benchmark_user_0001";
