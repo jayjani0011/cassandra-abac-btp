@@ -1,0 +1,5 @@
+enclave {
+    trusted {
+        public int check_worktime(int minute, [out] int *allowed, [out] int *debug);
+    };
+};

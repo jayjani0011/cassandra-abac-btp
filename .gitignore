@@ -90,3 +90,6 @@ cassandra-builds/
 cassandra-dtest/
 
 conf/triggers/trigger-example.jar
+
+# Local CATEE development signing material
+/tee/catee/.local/
