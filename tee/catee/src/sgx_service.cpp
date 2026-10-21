@@ -17,8 +17,24 @@
 #include <unistd.h>
 
 namespace {
+
+/* ---------- Configuration ---------- */
+
+constexpr size_t MAX_REQUEST_SIZE = 64;
+constexpr int REQUEST_TIMEOUT_SECONDS = 1;
+constexpr int RESPONSE_TIMEOUT_SECONDS = 1;
+constexpr int LISTENER_POLL_MS = 250;
+constexpr int LISTEN_BACKLOG = 16;
+
+/* ---------- Shutdown ---------- */
+
 volatile std::sig_atomic_t stopping = 0;
-void stop(int) { stopping = 1; }
+void stop(int)
+{
+    stopping = 1;
+}
+
+/* ---------- Resource Cleanup ---------- */
 
 struct Fd {
     int value;
@@ -58,6 +74,31 @@ struct SocketPath {
     }
 };
 
+/* ---------- Socket Helpers ---------- */
+
+void validate_socket_path(const std::string& path)
+{
+    sockaddr_un address{};
+    if (path.empty() || path.front() != '/' || path.size() >= sizeof(address.sun_path))
+        throw std::runtime_error("Use a short absolute socket path");
+
+    struct stat parent{};
+    auto directory = std::filesystem::path(path).parent_path();
+    if (lstat(directory.c_str(), &parent) != 0 || !S_ISDIR(parent.st_mode)
+        || parent.st_uid != geteuid() || (parent.st_mode & 0077) != 0)
+        throw std::runtime_error("Socket parent must be an owned private directory (0700)");
+}
+
+bool is_authorized_client(int fd)
+{
+    ucred peer{};
+    socklen_t length = sizeof(peer);
+    return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &length) == 0
+           && peer.uid == geteuid();
+}
+
+/* ---------- Request and Response I/O ---------- */
+
 bool reply(int fd, const std::string& text)
 {
     size_t sent = 0;
@@ -72,9 +113,9 @@ bool reply(int fd, const std::string& text)
 
 std::string read_request(int fd)
 {
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(REQUEST_TIMEOUT_SECONDS);
     std::string line;
-    while (!stopping && line.size() < 64) {
+    while (!stopping && line.size() < MAX_REQUEST_SIZE) {
         auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             deadline - std::chrono::steady_clock::now()).count();
         if (remaining <= 0) break;
@@ -92,8 +133,10 @@ std::string read_request(int fd)
     throw std::runtime_error("Incomplete, oversized, or timed-out request");
 }
 
+/* ---------- Working-Hours Request Handler ---------- */
+
 // Returns false only if the enclave failed, so the listener stops serving decisions.
-bool handle(int fd, sgx_enclave_id_t enclave)
+bool handle_request(int fd, sgx_enclave_id_t enclave)
 {
     std::string request;
     try { request = read_request(fd); }
@@ -129,6 +172,8 @@ bool handle(int fd, sgx_enclave_id_t enclave)
 }
 }
 
+/* ---------- Main ---------- */
+
 int main(int argc, char **argv)
 {
     if (argc != 3) {
@@ -137,16 +182,13 @@ int main(int argc, char **argv)
     }
     try {
         std::string path(argv[1]);
-        sockaddr_un address{};
-        if (path.empty() || path.front() != '/' || path.size() >= sizeof(address.sun_path))
-            throw std::runtime_error("Use a short absolute socket path");
-        struct stat parent{};
-        auto directory = std::filesystem::path(path).parent_path();
-        if (lstat(directory.c_str(), &parent) != 0 || !S_ISDIR(parent.st_mode)
-            || parent.st_uid != geteuid() || (parent.st_mode & 0077) != 0)
-            throw std::runtime_error("Socket parent must be an owned private directory (0700)");
+        validate_socket_path(path);
 
+        /* Enclave initialization */
         Enclave enclave(argv[2]);
+
+        /* Socket setup */
+        sockaddr_un address{};
         Fd listener(socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0));
         address.sun_family = AF_UNIX;
         std::memcpy(address.sun_path, path.c_str(), path.size() + 1);
@@ -155,19 +197,22 @@ int main(int argc, char **argv)
         if (bind(listener.value, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
             throw std::runtime_error(std::string("Cannot bind socket: ") + std::strerror(errno));
         SocketPath cleanup(path);
-        if (listen(listener.value, 16) != 0)
+        if (listen(listener.value, LISTEN_BACKLOG) != 0)
             throw std::runtime_error("Cannot listen on socket");
+        /* Shutdown handlers */
         struct sigaction action{};
         action.sa_handler = stop;
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGTERM, &action, nullptr) != 0 || sigaction(SIGINT, &action, nullptr) != 0)
             throw std::runtime_error("Cannot install shutdown handlers");
         std::cout << "CATEE first slice: HW, DEBUG enclave; listening on " << path << std::endl;
+
+        /* Accept and serve one client at a time */
         bool healthy = true;
         while (!stopping && healthy) {
             // A bounded poll also handles a signal arriving just before waiting.
             pollfd incoming{listener.value, POLLIN, 0};
-            int ready = poll(&incoming, 1, 250);
+            int ready = poll(&incoming, 1, LISTENER_POLL_MS);
             if (ready < 0 && errno == EINTR) continue;
             if (ready < 0) throw std::runtime_error("Cannot poll listener");
             if (stopping) break;
@@ -178,17 +223,14 @@ int main(int argc, char **argv)
             if (accepted < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
                 continue;
             Fd client(accepted);
-            timeval timeout{1, 0};
+            timeval timeout{RESPONSE_TIMEOUT_SECONDS, 0};
             if (setsockopt(client.value, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
                 throw std::runtime_error("Cannot set response timeout");
-            ucred peer{};
-            socklen_t length = sizeof(peer);
-            if (getsockopt(client.value, SOL_SOCKET, SO_PEERCRED, &peer, &length) != 0
-                || peer.uid != geteuid()) {
+            if (!is_authorized_client(client.value)) {
                 reply(client.value, "ERROR unauthorized_peer\n");
                 continue;
             }
-            healthy = handle(client.value, enclave.id);
+            healthy = handle_request(client.value, enclave.id);
         }
         return healthy ? 0 : 1;
     }

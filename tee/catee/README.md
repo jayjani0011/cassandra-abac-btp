@@ -16,7 +16,7 @@ decision. Cassandra is not connected to this service yet.
 ```text
 tee/catee/
 ├── src/
-│   ├── service.cpp
+│   ├── sgx_service.cpp
 │   └── Enclave/
 │       ├── Enclave.cpp
 │       ├── Enclave.edl

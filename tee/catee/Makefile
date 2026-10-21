@@ -56,7 +56,7 @@ $(BUILD)/Enclave.o: src/Enclave/Enclave.cpp $(BUILD)/trusted/Enclave_t.h
 $(BUILD)/Enclave_u.o: $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h
 	$(CC) $(HOST_FLAGS) -fPIC -c $< -o $@
 
-$(BUILD)/catee-service: src/service.cpp $(BUILD)/Enclave_u.o
+$(BUILD)/catee-service: src/sgx_service.cpp $(BUILD)/Enclave_u.o
 	$(CXX) $(HOST_FLAGS) -std=c++17 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
 
 $(BUILD)/enclave.so: $(BUILD)/Enclave.o $(BUILD)/Enclave_t.o src/Enclave/Enclave.lds
