@@ -25,6 +25,8 @@ import org.apache.cassandra.utils.Pair;
 public class PermissionsCache extends AuthCache<Pair<AuthenticatedUser, IResource>, Set<Permission>>
         implements PermissionsCacheMBean
 {
+    private final IAuthorizer authorizer;
+
     public PermissionsCache(IAuthorizer authorizer)
     {
         super(CACHE_NAME,
@@ -39,10 +41,14 @@ public class PermissionsCache extends AuthCache<Pair<AuthenticatedUser, IResourc
               (p) -> authorizer.authorize(p.left, p.right),
               authorizer.bulkLoader(),
               authorizer::requireAuthorization);
+        this.authorizer = authorizer;
     }
 
     public Set<Permission> getPermissions(AuthenticatedUser user, IResource resource)
     {
+        // Old grants and RBAC-only warmup entries must not skip required SGX checks.
+        if (authorizer instanceof CassandraAuthorizer && ((CassandraAuthorizer) authorizer).isCateeEnabled())
+            return authorizer.authorize(user, resource);
         return get(Pair.create(user, resource));
     }
 

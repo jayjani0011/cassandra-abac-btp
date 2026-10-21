@@ -19,6 +19,9 @@ package org.apache.cassandra.auth;
 
 import org.apache.cassandra.service.EnvironmentAttributeManager;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
@@ -36,6 +39,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.cassandra.auth.catee.CateeClient;
+import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.*;
 import org.apache.cassandra.cql3.UntypedResultSet.Row;
@@ -67,9 +72,31 @@ public class CassandraAuthorizer implements IAuthorizer
     private static final String PERMISSIONS = "permissions";
 
     private SelectStatement authorizeRoleStatement;
+    private final CateeClient cateeClient;
 
     public CassandraAuthorizer()
     {
+        String path = CassandraRelevantProperties.CATEE_SOCKET.getString();
+        try
+        {
+            cateeClient = path == null ? null : new CateeClient(Path.of(path), CassandraRelevantProperties.CATEE_TIMEOUT_MS.getInt());
+        }
+        catch (IllegalArgumentException e)
+        {
+            throw new ConfigurationException("Invalid CATEE socket or timeout configuration", e);
+        }
+    }
+
+    boolean isCateeEnabled()
+    {
+        return cateeClient != null;
+    }
+
+    boolean checkCateeWorktime() throws IOException
+    {
+        // Like PATEE's check_abac_env_conditions(), the database supplies local time.
+        LocalTime now = LocalTime.now();
+        return cateeClient.checkWorktime(now.getHour() * 60 + now.getMinute());
     }
 
     // Returns every permission on the resource granted to the user either directly
@@ -97,6 +124,8 @@ public class CassandraAuthorizer implements IAuthorizer
             }
             catch (Exception e)
             {
+                if (isCateeEnabled())
+                    throw new UnauthorizedException("Unable to complete CATEE authorization", e);
                 logger.error("Error during ABAC authorization", e);
             }
 
@@ -151,6 +180,9 @@ public class CassandraAuthorizer implements IAuthorizer
             logger.debug("Required environment attributes for ABAC evaluation: {}", requiredEnvAttributes);
             for (String attributeName : requiredEnvAttributes)
             {
+                // Resolve worktime lazily for rules whose user/resource conditions match.
+                if (isCateeEnabled() && "worktime".equals(attributeName))
+                    continue;
                 try
                 {
                     String attributeValue = EnvironmentAttributeManager.getInstance().getAttributeValue(attributeName);
@@ -180,7 +212,8 @@ public class CassandraAuthorizer implements IAuthorizer
 
             boolean userConditionsMet = evaluateConditions(ruleUserConditions, userAttributes);
             boolean resourceConditionsMet = evaluateConditions(ruleResourceConditions, resourceAttributes);
-            boolean environmentConditionsMet = evaluateConditions(ruleEnvironmentConditions, envAttributes);
+            boolean environmentConditionsMet = userConditionsMet && resourceConditionsMet
+                                               && evaluateEnvironmentConditions(ruleEnvironmentConditions, envAttributes);
 
             logger.info("Conditions met - U, R, E : {}, {}, {}", userConditionsMet, resourceConditionsMet, environmentConditionsMet);
 
@@ -205,6 +238,36 @@ public class CassandraAuthorizer implements IAuthorizer
 
         logger.info("ABAC permissions for user {} on resource {}: {}", user.getName(), resource.getName(), grantedPermissions);
         return grantedPermissions;
+    }
+
+    private boolean evaluateEnvironmentConditions(Map<String, String> conditions, Map<String, String> attributes)
+    {
+        if (!isCateeEnabled() || !conditions.containsKey("worktime"))
+            return evaluateConditions(conditions, attributes);
+
+        String expected = conditions.get("worktime");
+        if (!"true".equals(expected) && !"false".equals(expected))
+            throw new UnauthorizedException("worktime requires true or false");
+
+        Map<String, String> remaining = new HashMap<>(conditions);
+        remaining.remove("worktime");
+        if (!evaluateConditions(remaining, attributes))
+            return false;
+
+        // Reuse the observation for all applicable rules in this authorization call.
+        if (!attributes.containsKey("worktime"))
+        {
+            try
+            {
+                attributes.put("worktime", Boolean.toString(checkCateeWorktime()));
+            }
+            catch (IOException | RuntimeException | LinkageError e)
+            {
+                throw new UnauthorizedException("Required SGX service evaluation failed", e);
+            }
+        }
+        // Do not use unprotected hierarchy edges to alter an enclave Boolean.
+        return expected.equals(attributes.get("worktime"));
     }
 
     private boolean evaluateConditions(Map<String, String> conditions, Map<String, String> attributes)

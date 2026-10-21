@@ -87,7 +87,7 @@ $(JAVA_JARS):
 .PHONY: java-client test-java
 java-client: $(JAVA_JARS)
 	mkdir -p $(BUILD)/java
-	javac --release 11 -cp '$(BUILD)/java-deps/*' -d $(BUILD)/java $$(find src/java test/java -name '*.java')
+	javac --release 11 -cp '$(BUILD)/java-deps/*' -d $(BUILD)/java ../../src/java/org/apache/cassandra/auth/catee/CateeClient.java $$(find test/java -name '*.java')
 
 test-java: all java-client
 	python3 test/test_java_client.py

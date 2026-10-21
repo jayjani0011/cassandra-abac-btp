@@ -1,4 +1,4 @@
-# CATEE: first standalone slice
+# CATEE: working-hours prototype
 
 This small prototype follows PATEE's process layout:
 
@@ -9,7 +9,7 @@ Python test client -> local Unix socket -> native service -> ECALL -> SGX enclav
 The enclave contains a **fixed development fixture**, 09:00 inclusive to 17:00
 exclusive. Both the configuration and comparison live inside the enclave. The
 client supplies a time; this is not a trusted clock or a complete authorization
-decision. Cassandra is not connected to this service yet.
+decision. Cassandra can opt into this service for policies requiring `worktime`.
 
 ## File layout
 
@@ -17,7 +17,6 @@ decision. Cassandra is not connected to this service yet.
 tee/catee/
 ├── src/
 │   ├── sgx_service.cpp
-│   ├── java/org/apache/cassandra/auth/catee/CateeClient.java
 │   └── Enclave/
 │       ├── Enclave.cpp
 │       ├── Enclave.edl
@@ -82,11 +81,11 @@ choose a fresh private directory; the service never overwrites an existing path.
 
 ## Java socket client
 
-`src/java/org/apache/cassandra/auth/catee/CateeClient.java` is the database-side
+`../../src/java/org/apache/cassandra/auth/catee/CateeClient.java` is the database-side
 IPC helper. It follows PATEE's `send_request_to_sgx_service()` flow: open a Unix
 socket, send one request, read one response, and close the connection. It currently
 uses this service's existing text protocol rather than PATEE's C binary structs.
-Cassandra's authorization code is not connected yet.
+The same transport source is compiled by Cassandra and the standalone test harness.
 
 Java 11 Unix sockets use [junixsocket](https://kohlschutter.github.io/junixsocket/dependency.html)
 2.11.1. The Makefile downloads its two JARs to ignored `build/java-deps/` and checks
@@ -112,7 +111,62 @@ cryptographic proof of enclave identity.
 
 `make test-java` runs the existing 11 native tests, Java checks against the real
 hardware service, and controlled-peer tests for malformed replies and timeouts.
-It compiles with `javac --release 11` independently of Cassandra's Ant build.
+It compiles with `javac --release 11`. Cassandra's Ant dependency POM includes the
+same two transport JARs for normal builds and runtime packaging.
+
+## Cassandra integration
+
+Leave `cassandra.catee.socket` unset for the existing native ABAC behavior. To opt
+in, pass these JVM properties when starting Cassandra (for example through
+`JVM_EXTRA_OPTS` in a source checkout):
+
+```text
+-Dcassandra.catee.socket=/absolute/private/directory/catee.sock
+-Dcassandra.catee.timeout_ms=2000
+```
+
+Run the existing native service under the same OS user. Settings are captured when
+`CassandraAuthorizer` is constructed. The socket path must be absolute and the
+timeout must be 1–60000 milliseconds. These are connection settings, not policy
+configuration; the enclave window remains fixed at 09:00–17:00.
+
+Use the exact environment condition `{'worktime': 'true'}` (or `'false'`) in an
+ABAC rule. This uses the existing CREATE RULE syntax and `system_auth.abac_rules`
+map; no CQL grammar, administration handlers, or schema were changed.
+
+The flow follows PATEE's `check_abac_env_conditions()`: the database observes local
+time and asks the service to check it. The host clock and JVM timezone are trusted
+inputs. Cassandra only requests SGX evaluation when user/resource conditions and
+other environmental conditions match a rule requiring worktime. It reuses the
+result across applicable rules in that authorization call.
+
+In CATEE mode, worktime comes from SGX rather than a Java environment provider and
+never uses attribute hierarchy edges. Required service failures, invalid worktime
+values and ABAC execution errors abort authorization rather than falling back to
+RBAC. Successful evaluation preserves the existing result: RBAC union (ABAC grants
+minus ABAC denies). A healthy nonmatch does not revoke an RBAC grant. Policies
+without a required worktime check do not need a running service. Other environment
+attributes still use the existing providers; the superuser shortcut is unchanged.
+
+Final permission caching is bypassed when CATEE is enabled so a cached grant or an
+RBAC-only warmup entry cannot skip a newly required SGX check. This also makes
+non-worktime authorizations uncached in that mode. Role metadata caches remain.
+
+Focused checks from the repository root, after building the native service:
+
+```bash
+ant build-test
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAuthorizerTest -Dtest.jvm.args=-Dcatee.test.hardware=true
+catee_cql_dir=$(mktemp -d /tmp/catee-cql.XXXXXX)
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeCqlTest -Dtest.jvm.args="-Dcatee.test.hardware=true -Dcassandra.catee.socket=$catee_cql_dir/catee.sock"
+rmdir "$catee_cql_dir"
+```
+
+The hardware tests are explicitly opt-in. The network CQL test creates a policy
+using the existing grammar, checks allow/deny after policy updates, stops the
+service to verify failure despite an RBAC grant, and verifies that removing the
+worktime condition permits access without the service. All Cassandra test data is
+isolated under the test build directory; historical benchmarks are not rerun.
 
 ## Deliberately small scope
 
@@ -130,7 +184,7 @@ It compiles with `javac --release 11` independently of Cassandra's Ant build.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
 binary protocol in the design draft. There are no administrative updates, sealing,
-policy processing, Cassandra integration, or remote attestation in this
+enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
 Architecture reference: [PATEE's pinned implementation](https://github.com/harshit-jain52/postgres/tree/79d3f29576419d457c516bcda5d757d99f104b14/tee).
