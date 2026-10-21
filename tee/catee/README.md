@@ -11,6 +11,24 @@ exclusive. Both the configuration and comparison live inside the enclave. The
 client supplies a time; this is not a trusted clock or a complete authorization
 decision. Cassandra is not connected to this service yet.
 
+## File layout
+
+```text
+tee/catee/
+├── src/
+│   ├── service.cpp
+│   └── Enclave/
+│       ├── Enclave.cpp
+│       ├── Enclave.edl
+│       ├── Enclave.config.xml
+│       └── Enclave.lds
+├── test/
+│   ├── client.py
+│   └── test_service.py
+├── Makefile
+└── README.md
+```
+
 ## Build and test on the lab PC
 
 Use the existing SDK, driver and AESM service; no installation changes are needed:
@@ -50,8 +68,8 @@ In a second SSH terminal, use the printed socket path:
 
 ```bash
 cd /home/jayjani/cassandra-abac-btp/tee/catee
-python3 client.py /tmp/catee-demo.REPLACE/catee.sock 14:00
-python3 client.py /tmp/catee-demo.REPLACE/catee.sock 20:00
+python3 test/client.py /tmp/catee-demo.REPLACE/catee.sock 14:00
+python3 test/client.py /tmp/catee-demo.REPLACE/catee.sock 20:00
 ```
 
 Expected outputs: `14:00 -> true (HW DEBUG)` and `20:00 -> false (HW DEBUG)`.

@@ -24,7 +24,7 @@ import unittest
 
 from client import check_time
 
-ROOT = pathlib.Path(__file__).resolve().parent
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 SERVICE = ROOT / "build/catee-service"
 ENCLAVE = ROOT / "build/enclave.signed.so"
 
