@@ -17,6 +17,7 @@ decision. Cassandra is not connected to this service yet.
 tee/catee/
 ├── src/
 │   ├── sgx_service.cpp
+│   ├── java/org/apache/cassandra/auth/catee/CateeClient.java
 │   └── Enclave/
 │       ├── Enclave.cpp
 │       ├── Enclave.edl
@@ -24,7 +25,9 @@ tee/catee/
 │       └── Enclave.lds
 ├── test/
 │   ├── client.py
-│   └── test_service.py
+│   ├── test_service.py
+│   ├── test_java_client.py
+│   └── java/org/apache/cassandra/auth/catee/CateeClientDriver.java
 ├── Makefile
 └── README.md
 ```
@@ -77,6 +80,40 @@ Stop the service with Ctrl+C. It removes its own socket on normal shutdown;
 remove the now-empty temporary directory yourself. Following a forced kill,
 choose a fresh private directory; the service never overwrites an existing path.
 
+## Java socket client
+
+`src/java/org/apache/cassandra/auth/catee/CateeClient.java` is the database-side
+IPC helper. It follows PATEE's `send_request_to_sgx_service()` flow: open a Unix
+socket, send one request, read one response, and close the connection. It currently
+uses this service's existing text protocol rather than PATEE's C binary structs.
+Cassandra's authorization code is not connected yet.
+
+Java 11 Unix sockets use [junixsocket](https://kohlschutter.github.io/junixsocket/dependency.html)
+2.11.1. The Makefile downloads its two JARs to ignored `build/java-deps/` and checks
+pinned SHA-256 hashes before installing them. Only the first build needs a download.
+There is no project-specific JNI bridge or JDK upgrade.
+
+```bash
+# From tee/catee, with the SGX SDK environment loaded:
+make test-java
+# With the native service running, test 14:00 (840 minutes) and a 2000 ms timeout:
+java -cp 'build/java:build/java-deps/*' org.apache.cassandra.auth.catee.CateeClientDriver /tmp/catee-demo.REPLACE/catee.sock 840 2000
+```
+
+The test driver lives under `test/java/`. The reusable API is
+`new CateeClient(socketPath, timeoutMillis).checkWorktime(minute)`.
+It returns a Boolean only for an exact ALLOW/DENY reply; connection, read and
+protocol errors throw exceptions. Connections and reads share a deadline, replies
+are limited to 64 bytes, and slowly arriving bytes do not reset the deadline.
+Requests are a single small blocking write; general write-deadline handling is
+not implemented. Each call closes its socket, including on errors, without retry.
+The supplied minute remains an untrusted observation, and the socket reply is not
+cryptographic proof of enclave identity.
+
+`make test-java` runs the existing 11 native tests, Java checks against the real
+hardware service, and controlled-peer tests for malformed replies and timeouts.
+It compiles with `javac --release 11` independently of Cassandra's Ant build.
+
 ## Deliberately small scope
 
 - One request per connection: ASCII `CHECK <minute>\n`, where minute is 0–1439.
@@ -93,7 +130,7 @@ choose a fresh private directory; the service never overwrites an existing path.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
 binary protocol in the design draft. There are no administrative updates, sealing,
-policy processing, Java client, Cassandra changes, or remote attestation in this
+policy processing, Cassandra integration, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
 Architecture reference: [PATEE's pinned implementation](https://github.com/harshit-jain52/postgres/tree/79d3f29576419d457c516bcda5d757d99f104b14/tee).

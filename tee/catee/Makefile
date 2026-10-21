@@ -67,3 +67,27 @@ test: all
 # Preserve the local development key; do not delete persistent material on rebuild.
 clean:
 	rm -rf $(BUILD)
+
+# Java 11 Unix-domain socket transport; dependency binaries stay under build/.
+JUNIXSOCKET_VERSION := 2.11.1
+JAVA_JARS := $(BUILD)/java-deps/junixsocket-common-$(JUNIXSOCKET_VERSION).jar \
+             $(BUILD)/java-deps/junixsocket-native-common-$(JUNIXSOCKET_VERSION).jar
+
+$(BUILD)/java-deps/junixsocket-common-$(JUNIXSOCKET_VERSION).jar: JAVA_ARTIFACT = junixsocket-common
+$(BUILD)/java-deps/junixsocket-common-$(JUNIXSOCKET_VERSION).jar: JAVA_SHA256 = 152680589a359acd73773e3e7d9d9842007b7b86d8f8e0f828e1f87a81ad5d6a
+$(BUILD)/java-deps/junixsocket-native-common-$(JUNIXSOCKET_VERSION).jar: JAVA_ARTIFACT = junixsocket-native-common
+$(BUILD)/java-deps/junixsocket-native-common-$(JUNIXSOCKET_VERSION).jar: JAVA_SHA256 = 9aa0db38f76b499e36c2b56e7bf5472ceb19ad4d21ebe71b25d1bc81f0336040
+
+$(JAVA_JARS):
+	mkdir -p $(BUILD)/java-deps
+	curl --fail --location --connect-timeout 10 --max-time 60 --output $@.tmp https://repo.maven.apache.org/maven2/com/kohlschutter/junixsocket/$(JAVA_ARTIFACT)/$(JUNIXSOCKET_VERSION)/$(@F)
+	printf '%s  %s\n' '$(JAVA_SHA256)' '$@.tmp' | sha256sum --check -
+	mv $@.tmp $@
+
+.PHONY: java-client test-java
+java-client: $(JAVA_JARS)
+	mkdir -p $(BUILD)/java
+	javac --release 11 -cp '$(BUILD)/java-deps/*' -d $(BUILD)/java $$(find src/java test/java -name '*.java')
+
+test-java: all java-client
+	python3 test/test_java_client.py
