@@ -109,7 +109,7 @@ public class CassandraAuthorizer implements IAuthorizer
         }
     }
 
-    private Set<Permission> getAbacPermissions(AuthenticatedUser user, IResource resource)
+    Set<Permission> getAbacPermissions(AuthenticatedUser user, IResource resource)
     {
         logger.info("Performing ABAC authorization for user {} on resource {}", user.getName(), resource.getName());
 

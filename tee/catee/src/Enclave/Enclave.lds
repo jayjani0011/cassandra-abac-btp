@@ -1,0 +1,9 @@
+{
+    global:
+        enclave_entry;
+        g_global_data;
+        g_peak_heap_used;
+        g_peak_rsrv_mem_committed;
+    local:
+        *;
+};
