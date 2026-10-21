@@ -6,6 +6,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -16,9 +17,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-namespace {
-
-/* ---------- Configuration ---------- */
+/* ---------- Configuration and Service State ---------- */
 
 constexpr size_t MAX_REQUEST_SIZE = 64;
 constexpr int REQUEST_TIMEOUT_SECONDS = 1;
@@ -26,55 +25,66 @@ constexpr int RESPONSE_TIMEOUT_SECONDS = 1;
 constexpr int LISTENER_POLL_MS = 250;
 constexpr int LISTEN_BACKLOG = 16;
 
-/* ---------- Shutdown ---------- */
+enum RequestType
+{
+    SGX_MSG_UNKNOWN,
+    SGX_MSG_CHECK_WORKTIME
+};
 
+sgx_enclave_id_t global_eid = 0;
+int server_fd = -1;
+int client_fd = -1;
+std::string socket_path;
+struct stat socket_identity{};
+bool socket_bound = false;
 volatile std::sig_atomic_t stopping = 0;
+
+/* ---------- Helpers ---------- */
+
 void stop(int)
 {
     stopping = 1;
 }
 
-/* ---------- Resource Cleanup ---------- */
-
-struct Fd {
-    int value;
-    explicit Fd(int fd) : value(fd) {
-        if (fd < 0) throw std::runtime_error(std::strerror(errno));
+void close_client()
+{
+    if (client_fd >= 0)
+    {
+        close(client_fd);
+        client_fd = -1;
     }
-    ~Fd() { close(value); }
-    Fd(const Fd&) = delete;
-    Fd& operator=(const Fd&) = delete;
-};
+}
 
-struct Enclave {
-    sgx_enclave_id_t id = 0;
-    explicit Enclave(const char *path) {
-        sgx_status_t status = sgx_create_enclave(path, SGX_DEBUG_FLAG, nullptr, nullptr, &id, nullptr);
-        if (status != SGX_SUCCESS) {
-            std::cerr << "sgx_create_enclave failed: 0x" << std::hex << status << std::dec << '\n';
-            throw std::runtime_error("Cannot create hardware enclave");
-        }
+void cleanup()
+{
+    close_client();
+    if (server_fd >= 0)
+    {
+        close(server_fd);
+        server_fd = -1;
     }
-    ~Enclave() { sgx_destroy_enclave(id); }
-};
+    if (global_eid != 0)
+    {
+        sgx_destroy_enclave(global_eid);
+        global_eid = 0;
+    }
+    // Remove only the socket created by this service.
+    struct stat current{};
+    if (socket_bound && lstat(socket_path.c_str(), &current) == 0
+        && S_ISSOCK(current.st_mode) && current.st_dev == socket_identity.st_dev
+        && current.st_ino == socket_identity.st_ino)
+        unlink(socket_path.c_str());
+    socket_bound = false;
+}
 
-// Only remove the socket this process actually bound, never an existing file.
-struct SocketPath {
-    std::string path;
-    struct stat identity{};
-    explicit SocketPath(std::string p) : path(std::move(p)) {
-        if (lstat(path.c_str(), &identity) != 0)
-            throw std::runtime_error("Cannot inspect bound socket");
+void check_sgx(sgx_status_t status, const char *operation)
+{
+    if (status != SGX_SUCCESS)
+    {
+        std::cerr << operation << " failed: 0x" << std::hex << status << std::dec << '\n';
+        throw std::runtime_error("SGX operation failed");
     }
-    ~SocketPath() {
-        struct stat current{};
-        if (lstat(path.c_str(), &current) == 0 && S_ISSOCK(current.st_mode)
-            && current.st_dev == identity.st_dev && current.st_ino == identity.st_ino)
-            unlink(path.c_str());
-    }
-};
-
-/* ---------- Socket Helpers ---------- */
+}
 
 void validate_socket_path(const std::string& path)
 {
@@ -133,85 +143,60 @@ std::string read_request(int fd)
     throw std::runtime_error("Incomplete, oversized, or timed-out request");
 }
 
-/* ---------- Working-Hours Request Handler ---------- */
-
-// Returns false only if the enclave failed, so the listener stops serving decisions.
-bool handle_request(int fd, sgx_enclave_id_t enclave)
-{
-    std::string request;
-    try { request = read_request(fd); }
-    catch (const std::exception&) { reply(fd, "ERROR invalid_request\n"); return true; }
-
-    if (request.compare(0, 6, "CHECK ") != 0 || request.size() <= 6) {
-        reply(fd, "ERROR invalid_request\n");
-        return true;
-    }
-    int minute = 0;
-    const char *end = request.data() + request.size();
-    auto parsed = std::from_chars(request.data() + 6, end, minute);
-    if (parsed.ec != std::errc() || parsed.ptr != end) {
-        reply(fd, "ERROR invalid_request\n");
-        return true;
-    }
-
-    int result = -1, allowed = 0, debug = 0;
-    sgx_status_t status = check_worktime(enclave, &result, minute, &allowed, &debug);
-    if (status != SGX_SUCCESS || (result != 0 && result != 1)) {
-        std::cerr << "ECALL failed: transport=0x" << std::hex << status
-                  << std::dec << ", application=" << result << '\n';
-        reply(fd, "ERROR enclave_failure\n");
-        return false;
-    }
-    if (result == 1) reply(fd, "ERROR invalid_time\n");
-    else if (debug != 1 || (allowed != 0 && allowed != 1)) {
-        reply(fd, "ERROR unexpected_enclave_result\n");
-        return false;
-    }
-    else reply(fd, allowed ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
-    return true;
-}
-}
-
 /* ---------- Main ---------- */
 
 int main(int argc, char **argv)
 {
-    if (argc != 3) {
+    if (argc != 3)
+    {
         std::cerr << "Usage: catee-service SOCKET_PATH ENCLAVE_PATH\n";
         return 1;
     }
-    try {
-        std::string path(argv[1]);
-        validate_socket_path(path);
+    if (std::atexit(cleanup) != 0)
+    {
+        std::cerr << "Cannot register service cleanup\n";
+        return 1;
+    }
+
+    try
+    {
+        socket_path = argv[1];
+        validate_socket_path(socket_path);
 
         /* Enclave initialization */
-        Enclave enclave(argv[2]);
+        sgx_status_t ret = sgx_create_enclave(argv[2], SGX_DEBUG_FLAG, nullptr, nullptr, &global_eid, nullptr);
+        check_sgx(ret, "sgx_create_enclave");
 
         /* Socket setup */
+        server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+        if (server_fd < 0)
+            throw std::runtime_error("Cannot create listener");
         sockaddr_un address{};
-        Fd listener(socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0));
         address.sun_family = AF_UNIX;
-        std::memcpy(address.sun_path, path.c_str(), path.size() + 1);
-        // Never unlink before bind: an existing socket/file must make startup fail.
+        std::memcpy(address.sun_path, socket_path.c_str(), socket_path.size() + 1);
         umask(0077);
-        if (bind(listener.value, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
+        // An existing socket or file must make startup fail.
+        if (bind(server_fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0)
             throw std::runtime_error(std::string("Cannot bind socket: ") + std::strerror(errno));
-        SocketPath cleanup(path);
-        if (listen(listener.value, LISTEN_BACKLOG) != 0)
+        if (lstat(socket_path.c_str(), &socket_identity) != 0)
+            throw std::runtime_error("Cannot inspect bound socket");
+        socket_bound = true;
+        if (listen(server_fd, LISTEN_BACKLOG) != 0)
             throw std::runtime_error("Cannot listen on socket");
+
         /* Shutdown handlers */
         struct sigaction action{};
         action.sa_handler = stop;
         sigemptyset(&action.sa_mask);
         if (sigaction(SIGTERM, &action, nullptr) != 0 || sigaction(SIGINT, &action, nullptr) != 0)
             throw std::runtime_error("Cannot install shutdown handlers");
-        std::cout << "CATEE first slice: HW, DEBUG enclave; listening on " << path << std::endl;
+        std::cout << "CATEE first slice: HW, DEBUG enclave; listening on " << socket_path << std::endl;
 
-        /* Accept and serve one client at a time */
+        /* Client loop and request dispatch */
         bool healthy = true;
-        while (!stopping && healthy) {
-            // A bounded poll also handles a signal arriving just before waiting.
-            pollfd incoming{listener.value, POLLIN, 0};
+        while (!stopping && healthy)
+        {
+            pollfd incoming{server_fd, POLLIN, 0};
             int ready = poll(&incoming, 1, LISTENER_POLL_MS);
             if (ready < 0 && errno == EINTR) continue;
             if (ready < 0) throw std::runtime_error("Cannot poll listener");
@@ -219,22 +204,75 @@ int main(int argc, char **argv)
             if (ready == 0) continue;
             if (!(incoming.revents & POLLIN))
                 throw std::runtime_error("Listener failed");
-            int accepted = accept4(listener.value, nullptr, nullptr, SOCK_CLOEXEC);
-            if (accepted < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+
+            client_fd = accept4(server_fd, nullptr, nullptr, SOCK_CLOEXEC);
+            if (client_fd < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
                 continue;
-            Fd client(accepted);
+            if (client_fd < 0)
+                throw std::runtime_error("Cannot accept client");
             timeval timeout{RESPONSE_TIMEOUT_SECONDS, 0};
-            if (setsockopt(client.value, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
+            if (setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) != 0)
                 throw std::runtime_error("Cannot set response timeout");
-            if (!is_authorized_client(client.value)) {
-                reply(client.value, "ERROR unauthorized_peer\n");
+            if (!is_authorized_client(client_fd))
+            {
+                reply(client_fd, "ERROR unauthorized_peer\n");
+                close_client();
                 continue;
             }
-            healthy = handle_request(client.value, enclave.id);
+
+            std::string request;
+            try { request = read_request(client_fd); }
+            catch (const std::exception&)
+            {
+                reply(client_fd, "ERROR invalid_request\n");
+                close_client();
+                continue;
+            }
+            RequestType type = request.compare(0, 6, "CHECK ") == 0
+                               ? SGX_MSG_CHECK_WORKTIME : SGX_MSG_UNKNOWN;
+            switch (type)
+            {
+                case SGX_MSG_CHECK_WORKTIME:
+                {
+                    int minute = 0;
+                    const char *end = request.data() + request.size();
+                    auto parsed = std::from_chars(request.data() + 6, end, minute);
+                    if (parsed.ec != std::errc() || parsed.ptr != end)
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+
+                    int result = -1, allowed = 0, debug = 0;
+                    ret = check_worktime(global_eid, &result, minute, &allowed, &debug);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        std::cerr << "ECALL failed: transport=0x" << std::hex << ret
+                                  << std::dec << ", application=" << result << '\n';
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result == 1)
+                        reply(client_fd, "ERROR invalid_time\n");
+                    else if (debug != 1 || (allowed != 0 && allowed != 1))
+                    {
+                        reply(client_fd, "ERROR unexpected_enclave_result\n");
+                        healthy = false;
+                    }
+                    else
+                        reply(client_fd, allowed ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
+                    break;
+                }
+                default:
+                    reply(client_fd, "ERROR invalid_request\n");
+                    break;
+            }
+            close_client();
         }
         return healthy ? 0 : 1;
     }
-    catch (const std::exception& error) {
+    catch (const std::exception& error)
+    {
         std::cerr << "CATEE: " << error.what() << '\n';
         return 1;
     }
