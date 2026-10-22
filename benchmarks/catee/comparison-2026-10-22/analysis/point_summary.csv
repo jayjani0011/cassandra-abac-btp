@@ -1,0 +1,7 @@
+kind,scenario,mode,repetitions,mean_ns,repetition_mean_sd_ns
+measurement,control,native,3,83088.1891,35801.723241375
+measurement,control,sgx,3,69924.98006666667,26581.627174522222
+measurement,worktime_false,native,3,97829.32073333333,14098.56126628158
+measurement,worktime_false,sgx,3,268883.6104666667,41605.64024759378
+measurement,worktime_true,native,3,108186.05833333333,6969.805793202807
+measurement,worktime_true,sgx,3,275326.56433333334,33913.444021924224
