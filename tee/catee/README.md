@@ -196,6 +196,48 @@ service to verify failure despite an RBAC grant, and verifies that removing the
 worktime condition permits access without the service. All Cassandra test data is
 isolated under the test build directory; historical benchmarks are not rerun.
 
+## ABAC versus CATEE benchmark
+
+```bash
+# Validation only: 1 warmup batch, 2 retained batches, 3 calls per batch.
+python3 tee/catee/test/benchmark_abac.py tee/catee/build/benchmark-smoke-NEW --smoke
+# Measurement protocol: 3 independent pairs of fresh JVMs by default.
+python3 tee/catee/test/benchmark_abac.py benchmarks/catee/comparison-NEW
+```
+
+Choose a new output path without whitespace. Existing directories and paths
+under historical `benchmarks/abac-experiments` are refused. The command builds
+the test harness and native service, then uses isolated Cassandra test databases
+and temporary SGX service state. Do not run other Ant tests concurrently.
+
+Each JVM evaluates three fixed one-rule workloads: a control without an
+environment condition, `worktime=true`, and `worktime=false`. User/resource
+conditions match the same anchor request. Native ABAC uses a Java provider with
+the same local-clock 09:00–17:00 predicate; CATEE uses the real enclave. Every
+returned permission set is checked outside the timed interval, and modes must
+produce identical decisions. Runs crossing the working-hours boundary fail.
+
+Full mode uses the historical experiment protocol: load configuration once per
+point, discard 10 warmup batches, retain 100 batches of 100 calls (10,000 samples
+per scenario/mode/repetition). Scenario order is seeded and shared across each
+mode pair; mode order is seeded separately. Each mode/repetition has a fresh JVM.
+`--repeats N` changes the repetition count, not the per-point batch protocol.
+
+Only `getAbacPermissions()` is timed, including its internal authorization-table
+reads. Final permission caching, RBAC union, end-user CQL execution, assertions,
+CSV output, loading, enclave startup, and sealing are outside the measurement.
+Logging is reduced equally for both modes. This measures
+direct authorization overhead, not deployed CQL throughput or cache behavior.
+Historical measurements are a protocol reference, not directly interchangeable
+data for this fixed workload.
+
+Each mode/repetition writes raw per-call nanoseconds and decisions to CSV. JSON
+metadata records protocol, execution order, revision, dirty paths, host/software
+details, and service/enclave hashes. Only `status=complete` is valid; a failed run
+retains partial output marked incomplete. `kind=smoke` data is validation only.
+Logs and fresh JUnit reports are also retained. Summaries, graphs, and final
+measurement runs are separate subsequent steps.
+
 ## Administrative privilege store and ECALLs
 
 `src/Enclave/AdminPrivileges.h` follows PATEE's `admin_priv_entry_t` table:
