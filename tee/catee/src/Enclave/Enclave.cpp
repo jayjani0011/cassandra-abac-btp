@@ -1,5 +1,9 @@
 #include "Enclave_t.h"
 #include "sgx_utils.h"
+#include "AdminPrivileges.h"
+
+// Not exposed through ECALLs yet; administrative state starts with no grants.
+static AdminPrivileges admin_privileges;
 
 // Development fixture: configuration and comparison both live in the enclave.
 struct WorktimeWindow {

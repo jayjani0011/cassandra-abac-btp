@@ -168,6 +168,26 @@ service to verify failure despite an RBAC grant, and verifies that removing the
 worktime condition permits access without the service. All Cassandra test data is
 isolated under the test build directory; historical benchmarks are not rerun.
 
+## Administrative privilege store (first step)
+
+`src/Enclave/AdminPrivileges.h` follows PATEE's `admin_priv_entry_t` table:
+32 entries, privilege masks combined with OR on grant, cleared with AND-NOT on
+revoke, and checked for any matching bit. Callers should check one privilege bit
+at a time. Revocation retains the entry, as in PATEE; existing roles can be
+regranted even when the table is full. New roles fail when all slots are used.
+
+Cassandra role names replace PostgreSQL role OIDs. Names are case-sensitive and
+limited to 255 bytes in this prototype, with no truncation; empty names and zero
+masks are rejected. This is a CATEE bound, not a Cassandra role-name limit.
+Privilege-bit assignments and administration commands are not defined yet.
+
+An empty store is declared in the enclave source, but no ECALL or socket command
+uses it yet; the compiler may eliminate this unused state. This step does not
+protect or change Cassandra administration. There is no persistence yet.
+`make test-admin` runs host-side C++ tests against the same store implementation;
+these test data-structure behavior, not SGX isolation. `make test` also runs them
+before the existing hardware-service tests.
+
 ## Deliberately small scope
 
 - One request per connection: ASCII `CHECK <minute>\n`, where minute is 0–1439.
