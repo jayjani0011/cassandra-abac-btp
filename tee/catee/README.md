@@ -155,6 +155,30 @@ Final permission caching is bypassed when CATEE is enabled so a cached grant or 
 RBAC-only warmup entry cannot skip a newly required SGX check. This also makes
 non-worktime authorizations uncached in that mode. Role metadata caches remain.
 
+### Run all correctness checks
+
+From the repository root, with Java 11 and the SGX SDK environment available:
+
+```bash
+python3 tee/catee/test/validate_correctness.py
+```
+
+This command builds Cassandra's tests and the native prototype, runs the store,
+real-hardware ECALL, service, sealing, and Java-client suites, then runs the
+administration, authorizer, network CQL, loader, and environment-provider tests.
+Hardware tests are explicitly enabled. Fresh JUnit reports must contain executed
+tests, no failures/errors/skips, and the required hardware test methods; old
+reports cannot satisfy a new run. Any failed step exits nonzero.
+
+Each run keeps logs and JUnit reports in a new ignored
+`tee/catee/build/validation/run-*/` directory and prints their location. Test
+fixtures use temporary sockets and sealed state; no live Cassandra configuration
+or historical benchmark data is changed. Cassandra tests run sequentially because
+they share `build/test/cassandra`; do not run another Ant test job concurrently.
+The local enclave signing key is preserved. This validates the hardware debug
+prototype, not attestation or production enclave security. No performance sweeps
+are run by this command.
+
 Focused checks from the repository root, after building the native service:
 
 ```bash
