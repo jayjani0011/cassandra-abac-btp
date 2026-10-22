@@ -99,6 +99,11 @@ public class CassandraAuthorizer implements IAuthorizer
         return cateeClient.checkWorktime(now.getHour() * 60 + now.getMinute());
     }
 
+    boolean checkCateeAdminPrivilege(AuthenticatedUser user, int mask) throws IOException
+    {
+        return cateeClient.checkAdminPrivilege(user.getPrimaryRole().getRoleName(), mask);
+    }
+
     // Returns every permission on the resource granted to the user either directly
     // or indirectly via roles granted to the user.
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)

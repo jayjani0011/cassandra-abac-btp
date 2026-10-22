@@ -132,11 +132,11 @@ configuration; the enclave window remains fixed at 09:00–17:00.
 
 Use the exact environment condition `{'worktime': 'true'}` (or `'false'`) in an
 ABAC rule. This uses the existing CREATE RULE syntax and `system_auth.abac_rules`
-map; no CQL grammar, administration handlers, or schema were changed.
+map; no CQL grammar or schema changes are needed.
 
 The flow follows PATEE's `check_abac_env_conditions()`: the database observes local
 time and asks the service to check it. The host clock and JVM timezone are trusted
-inputs. Cassandra only requests SGX evaluation when user/resource conditions and
+inputs. For working-hours evaluation, Cassandra only requests SGX when user/resource conditions and
 other environmental conditions match a rule requiring worktime. It reuses the
 result across applicable rules in that authorization call.
 
@@ -156,6 +156,7 @@ Focused checks from the repository root, after building the native service:
 
 ```bash
 ant build-test
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAdministrationTest
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAuthorizerTest -Dtest.jvm.args=-Dcatee.test.hardware=true
 catee_cql_dir=$(mktemp -d /tmp/catee-cql.XXXXXX)
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeCqlTest -Dtest.jvm.args="-Dcatee.test.hardware=true -Dcassandra.catee.socket=$catee_cql_dir/catee.sock"
@@ -179,7 +180,37 @@ regranted even when the table is full. New roles fail when all slots are used.
 Cassandra role names replace PostgreSQL role OIDs. Names are case-sensitive and
 limited to 255 bytes in this prototype, with no truncation; empty names and zero
 masks are rejected. This is a CATEE bound, not a Cassandra role-name limit.
-Privilege-bit assignments and CQL administration commands are not defined yet.
+`CateeAdminPermission.mask(Permission)` defines stable bits independently of Java
+enum ordinals:
+
+| Bit | Existing administrative permission |
+| --- | --- |
+| 0 | CREATE_ATTRIBUTE |
+| 1 | DROP_ATTRIBUTE |
+| 2 | ALTER_ATTRIBUTE (also hierarchy-edge creation) |
+| 3 | ASSIGN_USER_ATTRIBUTE |
+| 4 | REVOKE_USER_ATTRIBUTE |
+| 5 | ASSIGN_RESOURCE_ATTRIBUTE |
+| 6 | REVOKE_RESOURCE_ATTRIBUTE |
+| 7 | CREATE_POLICY |
+| 8 | DROP_POLICY |
+
+The existing eight ABAC statement handlers use `CateeAdministration` for these
+checks. In CATEE mode it follows PATEE's superuser-or-enclave decision: superusers
+retain authority, other authenticated users need a direct global enclave grant,
+and service errors reject the operation. The primary role name is used; role
+inheritance and target-resource scoping do not apply to these enclave grants.
+Ordinary RBAC/ABAC administrative grants cannot substitute for them. In native
+mode the original scoped `ClientState.ensurePermission` check is used unchanged.
+General data-access authorization and ordinary permission GRANT/REVOKE are not
+changed by this hook.
+
+**Deferred pending a further decision:** new CQL administration syntax, grammar
+changes, and a CQL interface for granting/revoking CATEE privileges. Existing CQL
+ABAC commands keep their syntax. For now, grants are provisioned through the Java
+client (as the integration test does), using the mask mapping above; this is not
+an authenticated end-user administration interface. ALTER/ENABLE/DISABLE_POLICY
+have no existing statement handlers and are not exposed as CATEE operations.
 
 The enclave exposes PATEE's `enclave_grant_admin_priv`,
 `enclave_revoke_admin_priv`, and `enclave_check_admin_priv` operations over this
@@ -190,9 +221,10 @@ capacity failure, separate from the SGX transport status. Check initializes its
 output to false before validating input.
 
 As in PATEE, these ECALLs do not authenticate the administrator. A caller able to
-invoke them can change grants; database-side permission checks are a later step.
-Socket operations now invoke these ECALLs, but Cassandra administration handlers
-are not connected yet. Each new enclave starts empty; there is no
+invoke them can change grants; database-side checks do not authenticate direct
+service clients.
+Socket operations and the existing Cassandra administration checks now invoke
+these ECALLs. Each new enclave starts empty; there is no
 persistence yet.
 `make test-admin` runs host-side C++ tests against the same store implementation;
 these test data-structure behavior, not SGX isolation. `make test-admin-hw` invokes
@@ -221,7 +253,9 @@ a lost mutation response does not prove that the mutation did not happen.
 
 These operations are currently available to any process accepted by the existing
 same-UID socket check, matching the trusted database/service caller assumption.
-They are not authenticated administrator commands. `make test-java` additionally
+They are not authenticated administrator commands. Cassandra checks callers of
+the existing ABAC statements, but a same-UID process can call the service directly.
+`make test-java` additionally
 checks Java-to-enclave operations, role encoding, capacity errors, fragmented and
 malformed requests, and strict response handling against controlled peers.
 
@@ -241,7 +275,7 @@ malformed requests, and strict response handling against controlled peers.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There are no database administrative updates, sealing,
+binary protocol in the design draft. There are no new CQL administration commands, sealing,
 enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
