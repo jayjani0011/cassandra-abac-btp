@@ -19,7 +19,7 @@
 
 /* ---------- Configuration and Service State ---------- */
 
-constexpr size_t MAX_REQUEST_SIZE = 64;
+constexpr size_t MAX_REQUEST_SIZE = 544;
 constexpr int REQUEST_TIMEOUT_SECONDS = 1;
 constexpr int RESPONSE_TIMEOUT_SECONDS = 1;
 constexpr int LISTENER_POLL_MS = 250;
@@ -28,7 +28,10 @@ constexpr int LISTEN_BACKLOG = 16;
 enum RequestType
 {
     SGX_MSG_UNKNOWN,
-    SGX_MSG_CHECK_WORKTIME
+    SGX_MSG_CHECK_WORKTIME,
+    SGX_MSG_GRANT_ADMIN_PRIV,
+    SGX_MSG_REVOKE_ADMIN_PRIV,
+    SGX_MSG_CHECK_ADMIN_PRIV
 };
 
 sgx_enclave_id_t global_eid = 0;
@@ -143,6 +146,28 @@ std::string read_request(int fd)
     throw std::runtime_error("Incomplete, oversized, or timed-out request");
 }
 
+bool parse_admin_request(const std::string& request, char (&role)[256], uint32_t& mask)
+{
+    size_t first = request.find(' '), last = request.rfind(' ');
+    if (first == std::string::npos || first == last)
+        return false;
+    size_t length = last - first - 1;
+    if (length == 0 || length > 510 || length % 2 != 0)
+        return false;
+    for (size_t i = 0; i < length / 2; ++i)
+    {
+        unsigned byte = 0;
+        const char *begin = request.data() + first + 1 + i * 2;
+        auto parsed = std::from_chars(begin, begin + 2, byte, 16);
+        if (parsed.ec != std::errc() || parsed.ptr != begin + 2 || byte == 0)
+            return false;
+        role[i] = static_cast<char>(byte);
+    }
+    const char *end = request.data() + request.size();
+    auto parsed = std::from_chars(request.data() + last + 1, end, mask);
+    return parsed.ec == std::errc() && parsed.ptr == end && mask != 0;
+}
+
 /* ---------- Main ---------- */
 
 int main(int argc, char **argv)
@@ -230,6 +255,9 @@ int main(int argc, char **argv)
             }
             RequestType type = request.compare(0, 6, "CHECK ") == 0
                                ? SGX_MSG_CHECK_WORKTIME : SGX_MSG_UNKNOWN;
+            if (request.compare(0, 17, "GRANT_ADMIN_PRIV ") == 0) type = SGX_MSG_GRANT_ADMIN_PRIV;
+            if (request.compare(0, 18, "REVOKE_ADMIN_PRIV ") == 0) type = SGX_MSG_REVOKE_ADMIN_PRIV;
+            if (request.compare(0, 17, "CHECK_ADMIN_PRIV ") == 0) type = SGX_MSG_CHECK_ADMIN_PRIV;
             switch (type)
             {
                 case SGX_MSG_CHECK_WORKTIME:
@@ -261,6 +289,38 @@ int main(int argc, char **argv)
                     }
                     else
                         reply(client_fd, allowed ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
+                    break;
+                }
+                case SGX_MSG_GRANT_ADMIN_PRIV:
+                case SGX_MSG_REVOKE_ADMIN_PRIV:
+                case SGX_MSG_CHECK_ADMIN_PRIV:
+                {
+                    char role[256]{};
+                    uint32_t mask = 0;
+                    if (!parse_admin_request(request, role, mask))
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1, allowed = 0;
+                    if (type == SGX_MSG_GRANT_ADMIN_PRIV)
+                        ret = enclave_grant_admin_priv(global_eid, &result, role, mask);
+                    else if (type == SGX_MSG_REVOKE_ADMIN_PRIV)
+                        ret = enclave_revoke_admin_priv(global_eid, &result, role, mask);
+                    else
+                        ret = enclave_check_admin_priv(global_eid, &result, role, mask, &allowed);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1)
+                        || (allowed != 0 && allowed != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0)
+                        reply(client_fd, "ERROR admin_operation_failed\n");
+                    else if (type == SGX_MSG_CHECK_ADMIN_PRIV)
+                        reply(client_fd, allowed ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
+                    else
+                        reply(client_fd, "OK HW DEBUG\n");
                     break;
                 }
                 default:

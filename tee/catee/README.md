@@ -179,7 +179,7 @@ regranted even when the table is full. New roles fail when all slots are used.
 Cassandra role names replace PostgreSQL role OIDs. Names are case-sensitive and
 limited to 255 bytes in this prototype, with no truncation; empty names and zero
 masks are rejected. This is a CATEE bound, not a Cassandra role-name limit.
-Privilege-bit assignments and administration commands are not defined yet.
+Privilege-bit assignments and CQL administration commands are not defined yet.
 
 The enclave exposes PATEE's `enclave_grant_admin_priv`,
 `enclave_revoke_admin_priv`, and `enclave_check_admin_priv` operations over this
@@ -191,8 +191,8 @@ output to false before validating input.
 
 As in PATEE, these ECALLs do not authenticate the administrator. A caller able to
 invoke them can change grants; database-side permission checks are a later step.
-No socket commands or Cassandra handlers invoke them yet, so Cassandra
-administration is unchanged. Each new enclave starts empty; there is no
+Socket operations now invoke these ECALLs, but Cassandra administration handlers
+are not connected yet. Each new enclave starts empty; there is no
 persistence yet.
 `make test-admin` runs host-side C++ tests against the same store implementation;
 these test data-structure behavior, not SGX isolation. `make test-admin-hw` invokes
@@ -200,11 +200,37 @@ the real ECALLs on SGX hardware, covering grant/revoke/check, invalid inputs,
 capacity, and empty state after enclave recreation. `make test` runs both suites
 and the existing hardware-service tests.
 
+The socket follows PATEE's grant/revoke/check request dispatch, retaining CATEE's
+text framing rather than PATEE's binary C structures:
+
+```text
+GRANT_ADMIN_PRIV <hex-role-bytes> <unsigned-mask>\n
+REVOKE_ADMIN_PRIV <hex-role-bytes> <unsigned-mask>\n
+CHECK_ADMIN_PRIV <hex-role-bytes> <unsigned-mask>\n
+```
+
+Role bytes are hex-encoded so spaces, newlines, and Unicode do not change message
+framing; embedded NUL bytes are rejected. Java uses UTF-8 and rejects malformed
+Unicode. Masks are nonzero unsigned 32-bit values on the wire; Java uses `int`
+bitmasks, including the high bit. Grant/revoke return `OK HW DEBUG`, check returns
+`ALLOW HW DEBUG` or `DENY HW DEBUG`; errors throw on the Java side. Use
+`grantAdminPrivilege(role, mask)`, `revokeAdminPrivilege(role, mask)`, and
+`checkAdminPrivilege(role, mask)` on `CateeClient`. All operations share the same
+connection/read deadline and 64-byte response limit. No automatic retries occur;
+a lost mutation response does not prove that the mutation did not happen.
+
+These operations are currently available to any process accepted by the existing
+same-UID socket check, matching the trusted database/service caller assumption.
+They are not authenticated administrator commands. `make test-java` additionally
+checks Java-to-enclave operations, role encoding, capacity errors, fragmented and
+malformed requests, and strict response handling against controlled peers.
+
 ## Deliberately small scope
 
-- One request per connection: ASCII `CHECK <minute>\n`, where minute is 0–1439.
-- Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, or `ERROR <reason>\n`.
-- Requests are limited to 64 bytes including the newline, with a one-second
+- One request per connection: ASCII `CHECK <minute>\n` (minute 0–1439), or an
+  administrative operation above.
+- Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, `OK HW DEBUG\n`, or `ERROR <reason>\n`.
+- Requests are limited to 544 bytes including the newline, with a one-second
   request deadline. Inputs outside the minute range are rejected inside SGX.
 - The socket parent must be owned by the service user and private. Only the same
   OS UID can connect. This does not authenticate a particular program or protect

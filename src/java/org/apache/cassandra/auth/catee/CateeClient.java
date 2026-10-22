@@ -32,11 +32,61 @@ public final class CateeClient
         if (minute < 0 || minute >= 1440)
             throw new IllegalArgumentException("Minute must be between 0 and 1439");
 
+        return predicate(request("CHECK " + minute));
+    }
+
+    public void grantAdminPrivilege(String role, int mask) throws IOException
+    {
+        requireSuccess(request(adminRequest("GRANT_ADMIN_PRIV", role, mask)));
+    }
+
+    public void revokeAdminPrivilege(String role, int mask) throws IOException
+    {
+        requireSuccess(request(adminRequest("REVOKE_ADMIN_PRIV", role, mask)));
+    }
+
+    public boolean checkAdminPrivilege(String role, int mask) throws IOException
+    {
+        return predicate(request(adminRequest("CHECK_ADMIN_PRIV", role, mask)));
+    }
+
+    private static String adminRequest(String operation, String role, int mask)
+    {
+        if (role == null || role.isEmpty() || role.indexOf('\0') >= 0
+            || !StandardCharsets.UTF_8.newEncoder().canEncode(role) || mask == 0)
+            throw new IllegalArgumentException("A role name and nonzero privilege mask are required");
+        byte[] bytes = role.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 255)
+            throw new IllegalArgumentException("Role name exceeds 255 UTF-8 bytes");
+        StringBuilder hex = new StringBuilder();
+        for (byte value : bytes)
+        {
+            hex.append(Character.forDigit((value & 0xff) >>> 4, 16));
+            hex.append(Character.forDigit(value & 15, 16));
+        }
+        return operation + " " + hex + " " + Integer.toUnsignedString(mask);
+    }
+
+    private static boolean predicate(String response) throws IOException
+    {
+        if (response.equals("ALLOW HW DEBUG")) return true;
+        if (response.equals("DENY HW DEBUG")) return false;
+        throw new IOException("CATEE returned an error or invalid response");
+    }
+
+    private static void requireSuccess(String response) throws IOException
+    {
+        if (!response.equals("OK HW DEBUG"))
+            throw new IOException("CATEE returned an error or invalid response");
+    }
+
+    private String request(String request) throws IOException
+    {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         try (AFUNIXSocket socket = AFUNIXSocket.newInstance())
         {
             socket.connect(AFUNIXSocketAddress.of(socketPath), remainingMillis(deadline));
-            socket.getOutputStream().write(("CHECK " + minute + "\n").getBytes(StandardCharsets.US_ASCII));
+            socket.getOutputStream().write((request + "\n").getBytes(StandardCharsets.US_ASCII));
 
             InputStream input = socket.getInputStream();
             StringBuilder response = new StringBuilder();
@@ -48,9 +98,7 @@ public final class CateeClient
                     throw new IOException("Incomplete CATEE response");
                 if (value == '\n')
                 {
-                    if (response.toString().equals("ALLOW HW DEBUG")) return true;
-                    if (response.toString().equals("DENY HW DEBUG")) return false;
-                    throw new IOException("CATEE returned an error or invalid response");
+                    return response.toString();
                 }
                 if (value < 32 || value > 126)
                     throw new IOException("Non-ASCII CATEE response");

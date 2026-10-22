@@ -8,7 +8,7 @@ import threading
 import time
 import unittest
 
-from test_service import HardwareServiceTest as HardwareBase, ROOT
+from test_service import HardwareServiceTest as HardwareBase, ROOT, exchange
 
 
 def java_client(path, minute=840, timeout=500):
@@ -18,7 +18,54 @@ def java_client(path, minute=840, timeout=500):
                           capture_output=True, text=True, timeout=5)
 
 
+def java_admin(path, operation, role="alice", mask=1, timeout=2000):
+    return subprocess.run(["java", "-cp", f"{ROOT}/build/java:{ROOT}/build/java-deps/*",
+                           "org.apache.cassandra.auth.catee.CateeClientDriver",
+                           str(path), operation, role, str(mask), str(timeout)],
+                          capture_output=True, text=True, timeout=5)
+
+
 class JavaHardwareTest(HardwareBase):
+    def test_java_admin_operations(self):
+        for role in ["alice", "Research team जय", "a" * 255]:
+            for operation, mask, expected in [("CHECK", 1, "DENY"), ("GRANT", 1, "OK"),
+                                               ("GRANT", 2147483648, "OK"), ("CHECK", 1, "ALLOW"),
+                                               ("REVOKE", 1, "OK"), ("CHECK", 1, "DENY"),
+                                               ("CHECK", 2147483648, "ALLOW"),
+                                               ("REVOKE", 2147483648, "OK")]:
+                with self.subTest(role=role, operation=operation, mask=mask):
+                    result = java_admin(self.path, operation, role, mask)
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(f"{expected} HW DEBUG\n", result.stdout)
+        self.assertEqual("DENY HW DEBUG\n", java_admin(self.path, "CHECK", "Alice").stdout)
+        self.assertEqual(0, java_admin(self.path, "REVOKE", "missing").returncode)
+
+    def test_admin_malformed_requests(self):
+        for request in [b"GRANT_ADMIN_PRIV 61 0\n", b"GRANT_ADMIN_PRIV 00 1\n",
+                        b"GRANT_ADMIN_PRIV 6 1\n", b"GRANT_ADMIN_PRIV zz 1\n",
+                        b"GRANT_ADMIN_PRIV 61 -1\n", b"GRANT_ADMIN_PRIV 61 4294967296\n",
+                        b"CHECK_ADMIN_PRIV 61 1 extra\n", b"REVOKE_ADMIN_PRIV 61\n",
+                        b"GRANT_ADMIN_PRIV " + b"61" * 256 + b" 1\n",
+                        b"GRANT_ADMIN_PRIV " + b"x" * 544 + b"\n"]:
+            with self.subTest(request=request):
+                self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]))
+        self.assertEqual(b"OK HW DEBUG\n",
+                         exchange(self.path, [b"GRANT_ADMIN_", b"PRIV 667261676d656e74", b" 1\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 667261676d656e74 1\n"]))
+
+    def test_java_z_admin_capacity(self):
+        failed_role = None
+        for i in range(33):
+            role = f"capacity{i}"
+            result = java_admin(self.path, "GRANT", role)
+            if result.returncode:
+                self.assertEqual("", result.stdout)
+                failed_role = role
+                break
+        self.assertIsNotNone(failed_role)
+        self.assertEqual("DENY HW DEBUG\n", java_admin(self.path, "CHECK", failed_role).stdout)
+        self.assertEqual(0, java_admin(self.path, "GRANT", "capacity0", 2).returncode)
+
     def test_java_worktime_boundaries(self):
         for minute, expected in [(0, "DENY"), (539, "DENY"), (540, "ALLOW"),
                                  (840, "ALLOW"), (1019, "ALLOW"), (1020, "DENY"),
@@ -30,6 +77,15 @@ class JavaHardwareTest(HardwareBase):
 
 
 class JavaFailureTest(unittest.TestCase):
+    def test_admin_invalid_inputs_and_absent_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "absent.sock"
+            for operation in ["GRANT", "REVOKE", "CHECK"]:
+                for role, mask in [("alice", 1), ("", 1), ("a" * 256, 1), ("é" * 128, 1), ("alice", 0)]:
+                    result = java_admin(path, operation, role, mask)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertEqual("", result.stdout)
+
     def test_absent_service_and_invalid_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "absent.sock"
@@ -40,11 +96,17 @@ class JavaFailureTest(unittest.TestCase):
             self.assertNotEqual(0, java_client("relative.sock").returncode)
 
     def test_response_validation_and_deadline(self):
-        for response, expected in [(b"ALLOW HW DEBUG\n", 0), (b"DENY HW DEBUG\n", 0),
+        cases = [(b"ALLOW HW DEBUG\n", 0), (b"DENY HW DEBUG\n", 0),
                                    (b"ERROR enclave_failure\n", 1), (b"ALLOW\n", 1),
                                    (b"ALLOW HW DEBUG", 1), (b"\xff\n", 1),
-                                   (b"x" * 65, 1), (None, 1), ("drip", 1)]:
-            with self.subTest(response=response), tempfile.TemporaryDirectory() as directory:
+                                   (b"x" * 65, 1), (None, 1), ("drip", 1)]
+        cases = [(None, response, expected) for response, expected in cases] + [
+            ("GRANT", b"OK HW DEBUG\n", 0), ("REVOKE", b"OK HW DEBUG\n", 0),
+            ("GRANT", b"ALLOW HW DEBUG\n", 1), ("REVOKE", b"DENY HW DEBUG\n", 1),
+            ("CHECK", b"OK HW DEBUG\n", 1), ("CHECK", b"ERROR enclave_failure\n", 1),
+            ("GRANT", None, 1), ("REVOKE", b"ERROR admin_operation_failed\n", 1)]
+        for operation, response, expected in cases:
+            with self.subTest(operation=operation, response=response), tempfile.TemporaryDirectory() as directory:
                 path = pathlib.Path(directory) / "mock.sock"
                 errors = []
                 with socket.socket(socket.AF_UNIX) as server:
@@ -62,7 +124,9 @@ class JavaFailureTest(unittest.TestCase):
                                     if not chunk:
                                         raise RuntimeError("Missing Java request")
                                     request.extend(chunk)
-                                if request != b"CHECK 840\n":
+                                expected_request = (f"{operation}_ADMIN_PRIV 616c696365 1\n".encode()
+                                                    if operation else b"CHECK 840\n")
+                                if request != expected_request:
                                     raise RuntimeError("Incorrect Java request")
                                 if response is None:
                                     time.sleep(0.8)
@@ -81,7 +145,7 @@ class JavaFailureTest(unittest.TestCase):
                     worker = threading.Thread(target=serve)
                     worker.start()
                     try:
-                        result = java_client(path)
+                        result = java_admin(path, operation, timeout=500) if operation else java_client(path)
                     finally:
                         worker.join(timeout=4)
                     self.assertFalse(worker.is_alive())
