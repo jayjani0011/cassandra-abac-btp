@@ -35,7 +35,7 @@ $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h &: src/Enclave/Enc
 $(BUILD)/Enclave_t.o: $(BUILD)/trusted/Enclave_t.c $(BUILD)/trusted/Enclave_t.h
 	$(CC) $(TRUSTED_FLAGS) -c $< -o $@
 
-$(BUILD)/Enclave.o: src/Enclave/Enclave.cpp $(BUILD)/trusted/Enclave_t.h
+$(BUILD)/Enclave.o: src/Enclave/Enclave.cpp src/Enclave/AdminPrivileges.h $(BUILD)/trusted/Enclave_t.h
 	$(CXX) $(TRUSTED_FLAGS) -std=c++11 -nostdinc++ -I$(SGX_SDK)/include/libcxx -c $< -o $@
 
 $(BUILD)/Enclave_u.o: $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h
@@ -61,8 +61,24 @@ $(KEY):
 $(BUILD)/enclave.signed.so: $(BUILD)/enclave.so src/Enclave/Enclave.config.xml $(KEY)
 	$(SIGNER) sign -key $(KEY) -enclave $< -out $@ -config src/Enclave/Enclave.config.xml
 
-test: all
+test: all test-admin test-admin-hw
 	python3 test/test_service.py
+	python3 test/test_sealing.py
+
+.PHONY: test-admin
+$(BUILD)/test-admin-privileges: test/test_admin_privileges.cpp src/Enclave/AdminPrivileges.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++11 -Wall -Wextra -Werror -Isrc/Enclave $< -o $@
+
+test-admin: $(BUILD)/test-admin-privileges
+	./$(BUILD)/test-admin-privileges
+
+.PHONY: test-admin-hw
+$(BUILD)/test-admin-ecalls: test/test_admin_ecalls.cpp $(BUILD)/Enclave_u.o
+	$(CXX) $(HOST_FLAGS) -std=c++11 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
+
+test-admin-hw: $(BUILD)/test-admin-ecalls $(BUILD)/enclave.signed.so
+	./$(BUILD)/test-admin-ecalls $(BUILD)/enclave.signed.so
 
 # Preserve the local development key; do not delete persistent material on rebuild.
 clean:

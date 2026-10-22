@@ -21,6 +21,7 @@ import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.IResource;
 import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.auth.CateeAdministration;
 import org.apache.cassandra.cql3.RoleName;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -61,11 +62,11 @@ public class GrantAttributeStatement extends AlterSchemaStatement
     {
         if (attributeType.equalsIgnoreCase("USER"))
         {
-            state.ensurePermission(Permission.ASSIGN_USER_ATTRIBUTE, org.apache.cassandra.auth.RoleResource.role(name));
+            CateeAdministration.ensurePermission(state, Permission.ASSIGN_USER_ATTRIBUTE, org.apache.cassandra.auth.RoleResource.role(name));
         }
         else // RESOURCE
         {
-            state.ensurePermission(Permission.ASSIGN_RESOURCE_ATTRIBUTE, resource);
+            CateeAdministration.ensurePermission(state, Permission.ASSIGN_RESOURCE_ATTRIBUTE, resource);
         }
     }
 

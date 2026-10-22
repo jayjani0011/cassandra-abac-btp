@@ -40,7 +40,7 @@ class HardwareServiceTest(unittest.TestCase):
         cls.path = pathlib.Path(cls.directory.name) / "catee.sock"
         cls.log = tempfile.TemporaryFile(mode="w+")
         cls.addClassCleanup(cls.log.close)
-        cls.service = subprocess.Popen([str(SERVICE), str(cls.path), str(ENCLAVE)],
+        cls.service = subprocess.Popen([str(SERVICE), str(cls.path), str(ENCLAVE), str(cls.path) + ".sealed", "--init"],
                                        stdout=cls.log, stderr=subprocess.STDOUT)
         cls.addClassCleanup(cls.stop_service)
         for _ in range(100):
@@ -95,20 +95,20 @@ class HardwareServiceTest(unittest.TestCase):
     def test_existing_file_is_not_overwritten(self):
         existing = pathlib.Path(self.directory.name) / "existing"
         existing.write_text("keep me")
-        result = subprocess.run([str(SERVICE), str(existing), str(ENCLAVE)],
+        result = subprocess.run([str(SERVICE), str(existing), str(ENCLAVE), str(existing) + ".sealed", "--init"],
                                 capture_output=True, timeout=5)
         self.assertNotEqual(0, result.returncode)
         self.assertEqual("keep me", existing.read_text())
 
     def test_second_listener_does_not_replace_first(self):
-        result = subprocess.run([str(SERVICE), str(self.path), str(ENCLAVE)],
+        result = subprocess.run([str(SERVICE), str(self.path), str(ENCLAVE), str(self.path) + ".second.sealed", "--init"],
                                 capture_output=True, timeout=5)
         self.assertNotEqual(0, result.returncode)
         self.assertTrue(check_time(str(self.path), "14:00"))
 
     def test_missing_enclave_prevents_startup(self):
         path = pathlib.Path(self.directory.name) / "missing-enclave.sock"
-        result = subprocess.run([str(SERVICE), str(path), str(ENCLAVE) + ".missing"],
+        result = subprocess.run([str(SERVICE), str(path), str(ENCLAVE) + ".missing", str(path) + ".sealed", "--init"],
                                 capture_output=True, timeout=5)
         self.assertNotEqual(0, result.returncode)
         self.assertFalse(path.exists())
@@ -125,7 +125,7 @@ class HardwareServiceTest(unittest.TestCase):
 
     def test_shutdown_removes_only_its_socket(self):
         path = pathlib.Path(self.directory.name) / "shutdown.sock"
-        with subprocess.Popen([str(SERVICE), str(path), str(ENCLAVE)],
+        with subprocess.Popen([str(SERVICE), str(path), str(ENCLAVE), str(path) + ".sealed", "--init"],
                               stdout=self.log, stderr=subprocess.STDOUT) as process:
             try:
                 for _ in range(100):

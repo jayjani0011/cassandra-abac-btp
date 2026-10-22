@@ -52,7 +52,8 @@ Build rules follow the Intel SGX SDK's SampleEnclave linking pattern. All genera
 objects, generated EDL bindings and binaries are ignored under `build/`. A local
 development signing key is generated under ignored `.local/`, with restricted
 permissions. **Do not commit build outputs or the key.** `make clean` removes build
-outputs but preserves that key. No sealing or persistent trusted state exists yet.
+outputs but preserves that key. Preserve the key when restoring sealed state
+across rebuilds; SDK sealing binds state to the platform and enclave identity.
 
 ## Try it manually
 
@@ -63,7 +64,7 @@ source ~/sgxsdk/environment
 cd /home/jayjani/cassandra-abac-btp/tee/catee
 catee_run_dir=$(mktemp -d /tmp/catee-demo.XXXXXX)
 printf 'Socket path: %s/catee.sock\n' "$catee_run_dir"
-./build/catee-service "$catee_run_dir/catee.sock" "$PWD/build/enclave.signed.so"
+./build/catee-service "$catee_run_dir/catee.sock" "$PWD/build/enclave.signed.so" "$catee_run_dir/admin.sealed" --init
 ```
 
 In a second SSH terminal, use the printed socket path:
@@ -75,9 +76,10 @@ python3 test/client.py /tmp/catee-demo.REPLACE/catee.sock 20:00
 ```
 
 Expected outputs: `14:00 -> true (HW DEBUG)` and `20:00 -> false (HW DEBUG)`.
-Stop the service with Ctrl+C. It removes its own socket on normal shutdown;
-remove the now-empty temporary directory yourself. Following a forced kill,
-choose a fresh private directory; the service never overwrites an existing path.
+Stop the service with Ctrl+C. It removes its own socket on normal shutdown.
+Keep the directory and sealed state to restart with the same grants; omit
+`--init` on subsequent starts. Following a forced kill, confirm the old process
+has stopped before removing its stale socket; preserve the state and lock files.
 
 ## Java socket client
 
@@ -125,18 +127,19 @@ in, pass these JVM properties when starting Cassandra (for example through
 -Dcassandra.catee.timeout_ms=2000
 ```
 
-Run the existing native service under the same OS user. Settings are captured when
+Run the native service under the same OS user, supplying its state file as shown
+above. Settings are captured when
 `CassandraAuthorizer` is constructed. The socket path must be absolute and the
 timeout must be 1–60000 milliseconds. These are connection settings, not policy
 configuration; the enclave window remains fixed at 09:00–17:00.
 
 Use the exact environment condition `{'worktime': 'true'}` (or `'false'`) in an
 ABAC rule. This uses the existing CREATE RULE syntax and `system_auth.abac_rules`
-map; no CQL grammar, administration handlers, or schema were changed.
+map; no CQL grammar or schema changes are needed.
 
 The flow follows PATEE's `check_abac_env_conditions()`: the database observes local
 time and asks the service to check it. The host clock and JVM timezone are trusted
-inputs. Cassandra only requests SGX evaluation when user/resource conditions and
+inputs. For working-hours evaluation, Cassandra only requests SGX when user/resource conditions and
 other environmental conditions match a rule requiring worktime. It reuses the
 result across applicable rules in that authorization call.
 
@@ -156,6 +159,7 @@ Focused checks from the repository root, after building the native service:
 
 ```bash
 ant build-test
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAdministrationTest
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAuthorizerTest -Dtest.jvm.args=-Dcatee.test.hardware=true
 catee_cql_dir=$(mktemp -d /tmp/catee-cql.XXXXXX)
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeCqlTest -Dtest.jvm.args="-Dcatee.test.hardware=true -Dcassandra.catee.socket=$catee_cql_dir/catee.sock"
@@ -168,11 +172,136 @@ service to verify failure despite an RBAC grant, and verifies that removing the
 worktime condition permits access without the service. All Cassandra test data is
 isolated under the test build directory; historical benchmarks are not rerun.
 
+## Administrative privilege store and ECALLs
+
+`src/Enclave/AdminPrivileges.h` follows PATEE's `admin_priv_entry_t` table:
+32 entries, privilege masks combined with OR on grant, cleared with AND-NOT on
+revoke, and checked for any matching bit. Callers should check one privilege bit
+at a time. Revocation retains the entry, as in PATEE; existing roles can be
+regranted even when the table is full. New roles fail when all slots are used.
+
+Cassandra role names replace PostgreSQL role OIDs. Names are case-sensitive and
+limited to 255 bytes in this prototype, with no truncation; empty names and zero
+masks are rejected. This is a CATEE bound, not a Cassandra role-name limit.
+`CateeAdminPermission.mask(Permission)` defines stable bits independently of Java
+enum ordinals:
+
+| Bit | Existing administrative permission |
+| --- | --- |
+| 0 | CREATE_ATTRIBUTE |
+| 1 | DROP_ATTRIBUTE |
+| 2 | ALTER_ATTRIBUTE (also hierarchy-edge creation) |
+| 3 | ASSIGN_USER_ATTRIBUTE |
+| 4 | REVOKE_USER_ATTRIBUTE |
+| 5 | ASSIGN_RESOURCE_ATTRIBUTE |
+| 6 | REVOKE_RESOURCE_ATTRIBUTE |
+| 7 | CREATE_POLICY |
+| 8 | DROP_POLICY |
+
+The existing eight ABAC statement handlers use `CateeAdministration` for these
+checks. In CATEE mode it follows PATEE's superuser-or-enclave decision: superusers
+retain authority, other authenticated users need a direct global enclave grant,
+and service errors reject the operation. The primary role name is used; role
+inheritance and target-resource scoping do not apply to these enclave grants.
+Ordinary RBAC/ABAC administrative grants cannot substitute for them. In native
+mode the original scoped `ClientState.ensurePermission` check is used unchanged.
+General data-access authorization and ordinary permission GRANT/REVOKE are not
+changed by this hook.
+
+**Deferred pending a further decision:** new CQL administration syntax, grammar
+changes, and a CQL interface for granting/revoking CATEE privileges. Existing CQL
+ABAC commands keep their syntax. For now, grants are provisioned through the Java
+client (as the integration test does), using the mask mapping above; this is not
+an authenticated end-user administration interface. ALTER/ENABLE/DISABLE_POLICY
+have no existing statement handlers and are not exposed as CATEE operations.
+
+The enclave exposes PATEE's `enclave_grant_admin_priv`,
+`enclave_revoke_admin_priv`, and `enclave_check_admin_priv` operations over this
+store. Each role argument is a readable 256-byte buffer containing a terminated
+name; Edger8r copies that fixed buffer into the enclave. Unterminated names are
+rejected. The ECALL application result is 0 on success or 1 on invalid input or
+capacity failure, separate from the SGX transport status. Check initializes its
+output to false before validating input.
+
+As in PATEE, these ECALLs do not authenticate the administrator. A caller able to
+invoke them can change grants; database-side checks do not authenticate direct
+service clients.
+Socket operations and the existing Cassandra administration checks now invoke
+these ECALLs. The service restores the sealed administrative table before
+listening; explicit first-time initialization starts with no grants.
+`make test-admin` runs host-side C++ tests against the same store implementation;
+these test data-structure behavior, not SGX isolation. `make test-admin-hw` invokes
+the real ECALLs on SGX hardware, covering grant/revoke/check, invalid inputs,
+capacity, sealing/unsealing, and rejection of tampered state. `make test` runs both
+suites, the existing service tests, and sealing/restart tests.
+
+The socket follows PATEE's grant/revoke/check request dispatch, retaining CATEE's
+text framing rather than PATEE's binary C structures:
+
+```text
+GRANT_ADMIN_PRIV <hex-role-bytes> <unsigned-mask>\n
+REVOKE_ADMIN_PRIV <hex-role-bytes> <unsigned-mask>\n
+CHECK_ADMIN_PRIV <hex-role-bytes> <unsigned-mask>\n
+```
+
+Role bytes are hex-encoded so spaces, newlines, and Unicode do not change message
+framing; embedded NUL bytes are rejected. Java uses UTF-8 and rejects malformed
+Unicode. Masks are nonzero unsigned 32-bit values on the wire; Java uses `int`
+bitmasks, including the high bit. Grant/revoke return `OK HW DEBUG`, check returns
+`ALLOW HW DEBUG` or `DENY HW DEBUG`; errors throw on the Java side. Use
+`grantAdminPrivilege(role, mask)`, `revokeAdminPrivilege(role, mask)`, and
+`checkAdminPrivilege(role, mask)` on `CateeClient`. All operations share the same
+connection/read deadline and 64-byte response limit. No automatic retries occur;
+a lost mutation response does not prove that the mutation did not happen.
+
+These operations are currently available to any process accepted by the existing
+same-UID socket check, matching the trusted database/service caller assumption.
+They are not authenticated administrator commands. Cassandra checks callers of
+the existing ABAC statements, but a same-UID process can call the service directly.
+`make test-java` additionally
+checks Java-to-enclave operations, role encoding, capacity errors, fragmented and
+malformed requests, and strict response handling against controlled peers.
+
+## Sealed administrative state
+
+The service takes `SOCKET_PATH ENCLAVE_PATH STATE_FILE [--init]`. Like PATEE's
+reseal/load flow, it uses enclave ECALLs backed by `sgx_seal_data` and
+`sgx_unseal_data`; the service stores sealed bytes, not a plaintext table. The sealed payload
+contains a format version and the bounded administrative table. Working hours
+remain compiled constants and do not require mutable persisted configuration.
+
+Unlike PATEE's automatic initialization on a missing file, `--init` explicitly
+creates a new empty state file and refuses an existing file. Normal startup
+rejects missing, corrupted, truncated, symlinked, or incompatible state before
+opening the socket. The state file and socket need separate paths in owned
+private directories. State files are mode 0600. Keep runtime state outside Git.
+
+Successful grant/revoke operations seal the updated table, write an exclusively
+created `.tmp` file, sync it, atomically replace the state file, and sync its parent
+directory before replying `OK`. A persistence failure rejects the request and
+stops the service so modified but unpersisted memory cannot drive later checks.
+The last acknowledged state survives a failure before replacement; a lost reply
+or failure after replacement can leave the mutation persisted. There is no retry
+or transaction protocol across Cassandra and the service.
+
+A `.lock` file is held with an exclusive process lock to prevent cooperating
+services from writing the same state concurrently. Locks are released on process
+exit; retain the lock file between starts. Failed temporary/partial files are
+preserved for inspection rather than silently reset. Do not promote a leftover
+`.tmp` file automatically; recovery requires an explicit decision.
+
+Sealing detects altered bytes, but does not prevent deletion or replay of an
+older valid sealed file. An explicit reinitialization after deletion creates a
+new empty instance, not recovery. There is no rollback protection, remote
+attestation, state migration, or production-enclave security claim. Debug mode
+and the trusted database/service caller assumptions remain unchanged.
+
 ## Deliberately small scope
 
-- One request per connection: ASCII `CHECK <minute>\n`, where minute is 0–1439.
-- Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, or `ERROR <reason>\n`.
-- Requests are limited to 64 bytes including the newline, with a one-second
+- One request per connection: ASCII `CHECK <minute>\n` (minute 0–1439), or an
+  administrative operation above.
+- Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, `OK HW DEBUG\n`, or `ERROR <reason>\n`.
+- Requests are limited to 544 bytes including the newline, with a one-second
   request deadline. Inputs outside the minute range are rejected inside SGX.
 - The socket parent must be owned by the service user and private. Only the same
   OS UID can connect. This does not authenticate a particular program or protect
@@ -183,7 +312,7 @@ isolated under the test build directory; historical benchmarks are not rerun.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There are no administrative updates, sealing,
+binary protocol in the design draft. There are no new CQL administration commands,
 enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 

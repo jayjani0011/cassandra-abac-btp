@@ -9,6 +9,22 @@ public final class CateeClientDriver
     {
         try
         {
+            if (args.length == 5)
+            {
+                CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[4]));
+                int mask = Integer.parseUnsignedInt(args[3]);
+                switch (args[1])
+                {
+                    case "GRANT": client.grantAdminPrivilege(args[2], mask); break;
+                    case "REVOKE": client.revokeAdminPrivilege(args[2], mask); break;
+                    case "CHECK":
+                        System.out.println(client.checkAdminPrivilege(args[2], mask) ? "ALLOW HW DEBUG" : "DENY HW DEBUG");
+                        return;
+                    default: throw new IllegalArgumentException("Unknown administration operation");
+                }
+                System.out.println("OK HW DEBUG");
+                return;
+            }
             if (args.length != 3)
                 throw new IllegalArgumentException("Usage: SOCKET_PATH MINUTE TIMEOUT_MS");
             CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[2]));
