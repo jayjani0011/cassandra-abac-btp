@@ -1,0 +1,8 @@
+{
+  "status": "complete",
+  "kind": "measurement",
+  "source": "/home/jayjani/cassandra-abac-btp/benchmarks/catee/comparison-2026-10-22",
+  "repetitions": 3,
+  "matplotlib_version": "3.11.2",
+  "statistics": "means and sample SD across independent repetitions; overhead is mean of paired ratios; no confidence intervals"
+}
