@@ -325,8 +325,7 @@ Each mode/repetition writes raw per-call nanoseconds and decisions to CSV. JSON
 metadata records protocol, execution order, revision, dirty paths, host/software
 details, and service/enclave hashes. Only `status=complete` is valid; a failed run
 retains partial output marked incomplete. `kind=smoke` data is validation only.
-Logs and fresh JUnit reports are also retained. Final measurement runs remain
-a separate subsequent step.
+Logs and fresh JUnit reports are also retained.
 
 ### Summaries and graphs
 
@@ -359,7 +358,8 @@ Overhead is paired by repetition: compute SGX/native mean-latency ratios, then
 average those ratios. Reported overhead is `(ratio - 1) * 100`; its SD is computed
 across the paired percentages. This differs from dividing the two overall means.
 The comparison also reports the mean paired latency difference. Interpretation
-and final measured results belong to the subsequent measurement commit.
+and recorded full-protocol results are available in
+[the 22 October 2026 comparison](../../benchmarks/catee/comparison-2026-10-22/README.md).
 
 ## Administrative privilege store and ECALLs
 

@@ -1,0 +1,78 @@
+{
+  "status": "complete",
+  "kind": "measurement",
+  "repeats": 3,
+  "warmup_batches": 10,
+  "retained_batches": 100,
+  "calls_per_batch": 100,
+  "method": "CassandraAuthorizer.getAbacPermissions",
+  "configuration_loads_per_point": 1,
+  "policy": {
+    "rules": 1,
+    "user_conditions": 1,
+    "resource_conditions": 1,
+    "scenarios": [
+      "control",
+      "worktime_false",
+      "worktime_true"
+    ]
+  },
+  "timed_interval": "one getAbacPermissions call; setup, assertions, CSV writes and warmup excluded",
+  "logging": "root and CassandraAuthorizer WARN",
+  "cache": "direct method; final permissions cache and RBAC excluded",
+  "seed": 20261022,
+  "time_window": "09:00 inclusive to 17:00 exclusive; host local time",
+  "sgx": "HW DEBUG",
+  "host": "jayjanibtp",
+  "kernel": "5.15.0-198-generic",
+  "architecture": "x86_64",
+  "started_utc": "2026-10-22T14:25:29.965783+00:00",
+  "timezone": [
+    "IST",
+    "IST"
+  ],
+  "sgx_sdk": "/home/jayjani/sgxsdk",
+  "git_commit": "893352d594e4c7477fce63ff2407e00c77a27e45",
+  "git_status": "?? CATEE_DESIGN_FIRST_TRIAL_DRAFT.md\n?? SGX_INTEGRATION_DESIGN.md\n",
+  "java_version": "openjdk version \"11.0.32.1\" 2026-08-18\nOpenJDK Runtime Environment (build 11.0.32.1+1-post-1ubuntu1-22.04-Ubuntu)\nOpenJDK 64-Bit Server VM (build 11.0.32.1+1-post-1ubuntu1-22.04-Ubuntu, mixed mode, sharing)\n",
+  "ant_version": "Apache Ant(TM) version 1.10.12 compiled on January 17 1970\n",
+  "python_version": "3.14.8",
+  "sgx_sdk_version": "2.27.100.1",
+  "sgx_packages": "libsgx-urts=2.27.100.1-jammy1\nsgx-aesm-service=2.27.100.1-jammy1\n",
+  "cpu": "Intel(R) Core(TM) i5-6500 CPU @ 3.20GHz",
+  "enclave_sha256": "1a18f03e999822cd4b2af9e9cff3466c54fce3ddf71ca7763c1605e48da9fd18",
+  "service_sha256": "dd39462711f0471e8fd03b2c0607e73413bfaf824cf97521b7d7afd8d67f4c0f",
+  "within_worktime": false,
+  "execution_order": [
+    {
+      "repeat": 1,
+      "mode": "native"
+    },
+    {
+      "repeat": 1,
+      "mode": "sgx"
+    },
+    {
+      "repeat": 2,
+      "mode": "native"
+    },
+    {
+      "repeat": 2,
+      "mode": "sgx"
+    },
+    {
+      "repeat": 3,
+      "mode": "sgx"
+    },
+    {
+      "repeat": 3,
+      "mode": "native"
+    }
+  ],
+  "decisions": {
+    "worktime_true": "false",
+    "worktime_false": "true",
+    "control": "true"
+  },
+  "finished_utc": "2026-10-22T14:27:24.888575+00:00"
+}
