@@ -235,8 +235,41 @@ Each mode/repetition writes raw per-call nanoseconds and decisions to CSV. JSON
 metadata records protocol, execution order, revision, dirty paths, host/software
 details, and service/enclave hashes. Only `status=complete` is valid; a failed run
 retains partial output marked incomplete. `kind=smoke` data is validation only.
-Logs and fresh JUnit reports are also retained. Summaries, graphs, and final
-measurement runs are separate subsequent steps.
+Logs and fresh JUnit reports are also retained. Final measurement runs remain
+a separate subsequent step.
+
+### Summaries and graphs
+
+The analysis uses Matplotlib in an isolated environment. The pinned dependency
+below was validated with the lab's Python 3.14 interpreter:
+
+```bash
+python3 -m venv tee/catee/.local/analysis-venv
+tee/catee/.local/analysis-venv/bin/python -m pip install -r tee/catee/test/requirements-analysis.txt
+python3 tee/catee/test/test_analyze_benchmark.py
+tee/catee/.local/analysis-venv/bin/python tee/catee/test/analyze_benchmark.py benchmarks/catee/comparison-NEW benchmarks/catee/analysis-NEW
+```
+
+The output directory must be new and outside historical ABAC results. Inputs
+must be complete, follow the recorded batch protocol, contain every sample
+exactly once, and have identical decisions across modes/repetitions. Smoke input
+is refused unless `--allow-smoke` is supplied; its CSVs and graphs are labeled as
+validation data. A successful analysis writes `analysis.json` with
+`status=complete`; partial output from a failed analysis must not be used.
+
+Outputs are `batch_summary.csv`, `repeat_summary.csv`, `point_summary.csv`, and
+`comparison.csv`, plus latency/overhead graphs in SVG and PNG. Tables use
+nanoseconds; latency figures use microseconds. Batch and repetition tables include
+mean, median, and nearest-rank p95. Point means average independent repetition
+means. Error bars are sample standard deviations across repetitions, not
+confidence intervals or variation estimated by treating all calls as independent.
+With one repetition, SD is left blank and error bars are omitted.
+
+Overhead is paired by repetition: compute SGX/native mean-latency ratios, then
+average those ratios. Reported overhead is `(ratio - 1) * 100`; its SD is computed
+across the paired percentages. This differs from dividing the two overall means.
+The comparison also reports the mean paired latency difference. Interpretation
+and final measured results belong to the subsequent measurement commit.
 
 ## Administrative privilege store and ECALLs
 
