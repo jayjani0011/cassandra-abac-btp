@@ -168,7 +168,7 @@ service to verify failure despite an RBAC grant, and verifies that removing the
 worktime condition permits access without the service. All Cassandra test data is
 isolated under the test build directory; historical benchmarks are not rerun.
 
-## Administrative privilege store (first step)
+## Administrative privilege store and ECALLs
 
 `src/Enclave/AdminPrivileges.h` follows PATEE's `admin_priv_entry_t` table:
 32 entries, privilege masks combined with OR on grant, cleared with AND-NOT on
@@ -181,12 +181,24 @@ limited to 255 bytes in this prototype, with no truncation; empty names and zero
 masks are rejected. This is a CATEE bound, not a Cassandra role-name limit.
 Privilege-bit assignments and administration commands are not defined yet.
 
-An empty store is declared in the enclave source, but no ECALL or socket command
-uses it yet; the compiler may eliminate this unused state. This step does not
-protect or change Cassandra administration. There is no persistence yet.
+The enclave exposes PATEE's `enclave_grant_admin_priv`,
+`enclave_revoke_admin_priv`, and `enclave_check_admin_priv` operations over this
+store. Each role argument is a readable 256-byte buffer containing a terminated
+name; Edger8r copies that fixed buffer into the enclave. Unterminated names are
+rejected. The ECALL application result is 0 on success or 1 on invalid input or
+capacity failure, separate from the SGX transport status. Check initializes its
+output to false before validating input.
+
+As in PATEE, these ECALLs do not authenticate the administrator. A caller able to
+invoke them can change grants; database-side permission checks are a later step.
+No socket commands or Cassandra handlers invoke them yet, so Cassandra
+administration is unchanged. Each new enclave starts empty; there is no
+persistence yet.
 `make test-admin` runs host-side C++ tests against the same store implementation;
-these test data-structure behavior, not SGX isolation. `make test` also runs them
-before the existing hardware-service tests.
+these test data-structure behavior, not SGX isolation. `make test-admin-hw` invokes
+the real ECALLs on SGX hardware, covering grant/revoke/check, invalid inputs,
+capacity, and empty state after enclave recreation. `make test` runs both suites
+and the existing hardware-service tests.
 
 ## Deliberately small scope
 
@@ -203,7 +215,7 @@ before the existing hardware-service tests.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There are no administrative updates, sealing,
+binary protocol in the design draft. There are no database administrative updates, sealing,
 enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 

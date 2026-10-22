@@ -61,7 +61,7 @@ $(KEY):
 $(BUILD)/enclave.signed.so: $(BUILD)/enclave.so src/Enclave/Enclave.config.xml $(KEY)
 	$(SIGNER) sign -key $(KEY) -enclave $< -out $@ -config src/Enclave/Enclave.config.xml
 
-test: all test-admin
+test: all test-admin test-admin-hw
 	python3 test/test_service.py
 
 .PHONY: test-admin
@@ -71,6 +71,13 @@ $(BUILD)/test-admin-privileges: test/test_admin_privileges.cpp src/Enclave/Admin
 
 test-admin: $(BUILD)/test-admin-privileges
 	./$(BUILD)/test-admin-privileges
+
+.PHONY: test-admin-hw
+$(BUILD)/test-admin-ecalls: test/test_admin_ecalls.cpp $(BUILD)/Enclave_u.o
+	$(CXX) $(HOST_FLAGS) -std=c++11 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
+
+test-admin-hw: $(BUILD)/test-admin-ecalls $(BUILD)/enclave.signed.so
+	./$(BUILD)/test-admin-ecalls $(BUILD)/enclave.signed.so
 
 # Preserve the local development key; do not delete persistent material on rebuild.
 clean:
