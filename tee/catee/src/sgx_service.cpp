@@ -11,8 +11,11 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -37,7 +40,9 @@ enum RequestType
 sgx_enclave_id_t global_eid = 0;
 int server_fd = -1;
 int client_fd = -1;
+int state_lock_fd = -1;
 std::string socket_path;
+std::string state_path;
 struct stat socket_identity{};
 bool socket_bound = false;
 volatile std::sig_atomic_t stopping = 0;
@@ -70,6 +75,11 @@ void cleanup()
     {
         sgx_destroy_enclave(global_eid);
         global_eid = 0;
+    }
+    if (state_lock_fd >= 0)
+    {
+        close(state_lock_fd);
+        state_lock_fd = -1;
     }
     // Remove only the socket created by this service.
     struct stat current{};
@@ -108,6 +118,88 @@ bool is_authorized_client(int fd)
     socklen_t length = sizeof(peer);
     return getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &peer, &length) == 0
            && peer.uid == geteuid();
+}
+
+/* ---------- Sealing and State File I/O ---------- */
+
+std::vector<uint8_t> sealed_buffer()
+{
+    uint32_t size = 0;
+    int result = -1;
+    check_sgx(enclave_get_sealed_size(global_eid, &result, &size), "get sealed size");
+    if (result != 0 || size == 0 || size > 65536)
+        throw std::runtime_error("Invalid sealed state size");
+    return std::vector<uint8_t>(size);
+}
+
+void transfer_state(int fd, std::vector<uint8_t>& bytes, bool writing)
+{
+    size_t offset = 0;
+    while (offset < bytes.size())
+    {
+        ssize_t count = writing ? write(fd, bytes.data() + offset, bytes.size() - offset)
+                                : read(fd, bytes.data() + offset, bytes.size() - offset);
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) throw std::runtime_error("Incomplete state file I/O");
+        offset += static_cast<size_t>(count);
+    }
+}
+
+void reseal_admin(bool initialize = false)
+{
+    auto bytes = sealed_buffer();
+    int result = -1;
+    check_sgx(enclave_seal_admin(global_eid, &result, bytes.data(), bytes.size()), "seal admin state");
+    if (result != 0) throw std::runtime_error("Cannot seal admin state");
+    std::string destination = initialize ? state_path : state_path + ".tmp";
+    int fd = open(destination.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    if (fd < 0) throw std::runtime_error("Cannot exclusively create state file");
+    try
+    {
+        transfer_state(fd, bytes, true);
+        if (fsync(fd) != 0) throw std::runtime_error("Cannot sync state file");
+        int closed = close(fd);
+        fd = -1;
+        if (closed != 0) throw std::runtime_error("Cannot close state file");
+        if (!initialize && rename(destination.c_str(), state_path.c_str()) != 0)
+            throw std::runtime_error("Cannot replace state file");
+        auto parent = std::filesystem::path(state_path).parent_path();
+        fd = open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (fd < 0 || fsync(fd) != 0) throw std::runtime_error("Cannot sync state directory");
+        closed = close(fd);
+        fd = -1;
+        if (closed != 0) throw std::runtime_error("Cannot close state directory");
+    }
+    catch (...)
+    {
+        if (fd >= 0) close(fd);
+        // Preserve failed/partial files for explicit recovery; never reset state silently.
+        throw;
+    }
+}
+
+void load_admin_state()
+{
+    auto bytes = sealed_buffer();
+    int fd = open(state_path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) throw std::runtime_error("Cannot open sealed state; initialize explicitly for a new instance");
+    try
+    {
+        struct stat info{};
+        if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_uid != geteuid()
+            || (info.st_mode & 0077) != 0 || info.st_size != static_cast<off_t>(bytes.size()))
+            throw std::runtime_error("Invalid sealed state file");
+        transfer_state(fd, bytes, false);
+    }
+    catch (...)
+    {
+        close(fd);
+        throw;
+    }
+    if (close(fd) != 0) throw std::runtime_error("Cannot close sealed state file");
+    int result = -1;
+    check_sgx(enclave_unseal_admin(global_eid, &result, bytes.data(), bytes.size()), "unseal admin state");
+    if (result != 0) throw std::runtime_error("Sealed admin state rejected");
 }
 
 /* ---------- Request and Response I/O ---------- */
@@ -172,9 +264,9 @@ bool parse_admin_request(const std::string& request, char (&role)[256], uint32_t
 
 int main(int argc, char **argv)
 {
-    if (argc != 3)
+    if ((argc != 4 && argc != 5) || (argc == 5 && std::string(argv[4]) != "--init"))
     {
-        std::cerr << "Usage: catee-service SOCKET_PATH ENCLAVE_PATH\n";
+        std::cerr << "Usage: catee-service SOCKET_PATH ENCLAVE_PATH STATE_FILE [--init]\n";
         return 1;
     }
     if (std::atexit(cleanup) != 0)
@@ -187,10 +279,22 @@ int main(int argc, char **argv)
     {
         socket_path = argv[1];
         validate_socket_path(socket_path);
+        state_path = argv[3];
+        validate_socket_path(state_path);
+        if (std::filesystem::path(state_path).lexically_normal() == std::filesystem::path(socket_path).lexically_normal())
+            throw std::runtime_error("State file and socket paths must differ");
+        state_lock_fd = open((state_path + ".lock").c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0600);
+        struct stat lock_info{};
+        if (state_lock_fd < 0 || fstat(state_lock_fd, &lock_info) != 0 || !S_ISREG(lock_info.st_mode)
+            || lock_info.st_uid != geteuid() || (lock_info.st_mode & 0077) != 0
+            || flock(state_lock_fd, LOCK_EX | LOCK_NB) != 0)
+            throw std::runtime_error("Cannot exclusively lock sealed state");
 
         /* Enclave initialization */
         sgx_status_t ret = sgx_create_enclave(argv[2], SGX_DEBUG_FLAG, nullptr, nullptr, &global_eid, nullptr);
         check_sgx(ret, "sgx_create_enclave");
+        if (argc == 5) reseal_admin(true);
+        else load_admin_state();
 
         /* Socket setup */
         server_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
@@ -320,7 +424,19 @@ int main(int argc, char **argv)
                     else if (type == SGX_MSG_CHECK_ADMIN_PRIV)
                         reply(client_fd, allowed ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
                     else
-                        reply(client_fd, "OK HW DEBUG\n");
+                    {
+                        try
+                        {
+                            reseal_admin();
+                            reply(client_fd, "OK HW DEBUG\n");
+                        }
+                        catch (const std::exception& error)
+                        {
+                            std::cerr << "State persistence failed: " << error.what() << '\n';
+                            reply(client_fd, "ERROR persistence_failure\n");
+                            healthy = false;
+                        }
+                    }
                     break;
                 }
                 default:

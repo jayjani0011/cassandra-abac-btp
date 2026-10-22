@@ -63,6 +63,7 @@ $(BUILD)/enclave.signed.so: $(BUILD)/enclave.so src/Enclave/Enclave.config.xml $
 
 test: all test-admin test-admin-hw
 	python3 test/test_service.py
+	python3 test/test_sealing.py
 
 .PHONY: test-admin
 $(BUILD)/test-admin-privileges: test/test_admin_privileges.cpp src/Enclave/AdminPrivileges.h

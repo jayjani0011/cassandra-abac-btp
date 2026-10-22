@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <vector>
 
 static void expect_check(sgx_enclave_id_t enclave, const char *role, uint32_t mask, int expected)
 {
@@ -71,10 +72,20 @@ int main(int argc, char **argv)
     assert(enclave_revoke_admin_priv(enclave, &result, alice, 6) == SGX_SUCCESS && result == 0);
     expect_check(enclave, alice, 6, 0);
 
+    uint32_t sealed_size = 0;
+    assert(enclave_get_sealed_size(enclave, &result, &sealed_size) == SGX_SUCCESS && result == 0);
+    std::vector<uint8_t> sealed(sealed_size);
+    assert(enclave_seal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result == 0);
     assert(sgx_destroy_enclave(enclave) == SGX_SUCCESS);
     assert(sgx_create_enclave(argv[1], SGX_DEBUG_FLAG, nullptr, nullptr, &enclave, nullptr) == SGX_SUCCESS);
-    // Persistence is not implemented: a fresh enclave has no administrative grants.
+    // Fresh state is empty until a valid sealed snapshot is restored.
     expect_check(enclave, longest, 1, 0);
+    assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result == 0);
+    expect_check(enclave, longest, 1, 1);
+    sealed.back() ^= 1;
+    assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result != 0);
+    expect_check(enclave, longest, 1, 1);
+    assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size - 1) == SGX_SUCCESS && result != 0);
     assert(sgx_destroy_enclave(enclave) == SGX_SUCCESS);
     puts("Administrative ECALL hardware tests passed");
 }

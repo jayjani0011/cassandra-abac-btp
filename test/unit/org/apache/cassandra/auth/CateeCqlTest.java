@@ -39,7 +39,7 @@ public class CateeCqlTest extends CQLTester
         Path root = Path.of("tee/catee").toAbsolutePath();
         log = socket.resolveSibling("service.log");
         service = new ProcessBuilder(root.resolve("build/catee-service").toString(), socket.toString(),
-                                     root.resolve("build/enclave.signed.so").toString())
+                                     root.resolve("build/enclave.signed.so").toString(), socket.toString() + ".sealed", "--init")
                   .redirectErrorStream(true).redirectOutput(log.toFile()).start();
         CateeClient client = new CateeClient(socket, 2000);
         boolean ready = false;
@@ -64,6 +64,8 @@ public class CateeCqlTest extends CQLTester
             if (!service.waitFor(3, TimeUnit.SECONDS)) { service.destroyForcibly(); service.waitFor(); }
         }
         if (socket != null) Files.deleteIfExists(socket);
+        if (socket != null) Files.deleteIfExists(Path.of(socket.toString() + ".sealed"));
+        if (socket != null) Files.deleteIfExists(Path.of(socket.toString() + ".sealed.lock"));
         if (log != null) Files.deleteIfExists(log);
     }
 

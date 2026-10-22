@@ -204,7 +204,7 @@ public class CateeAuthorizerTest extends CQLTester
         try
         {
             service = new ProcessBuilder(root.resolve("build/catee-service").toString(), socket.toString(),
-                                         root.resolve("build/enclave.signed.so").toString())
+                                         root.resolve("build/enclave.signed.so").toString(), socket.toString() + ".sealed", "--init")
                       .redirectErrorStream(true).redirectOutput(log.toFile()).start();
             CateeClient client = new CateeClient(socket, 2000);
             boolean ready = false;
@@ -244,6 +244,8 @@ public class CateeAuthorizerTest extends CQLTester
             if (previousSocket == null) CassandraRelevantProperties.CATEE_SOCKET.clearValue();
             else CassandraRelevantProperties.CATEE_SOCKET.setString(previousSocket);
             Files.deleteIfExists(socket);
+            Files.deleteIfExists(Path.of(socket.toString() + ".sealed"));
+            Files.deleteIfExists(Path.of(socket.toString() + ".sealed.lock"));
             Files.deleteIfExists(log);
             Files.delete(directory);
         }

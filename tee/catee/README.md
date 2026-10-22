@@ -52,7 +52,8 @@ Build rules follow the Intel SGX SDK's SampleEnclave linking pattern. All genera
 objects, generated EDL bindings and binaries are ignored under `build/`. A local
 development signing key is generated under ignored `.local/`, with restricted
 permissions. **Do not commit build outputs or the key.** `make clean` removes build
-outputs but preserves that key. No sealing or persistent trusted state exists yet.
+outputs but preserves that key. Preserve the key when restoring sealed state
+across rebuilds; SDK sealing binds state to the platform and enclave identity.
 
 ## Try it manually
 
@@ -63,7 +64,7 @@ source ~/sgxsdk/environment
 cd /home/jayjani/cassandra-abac-btp/tee/catee
 catee_run_dir=$(mktemp -d /tmp/catee-demo.XXXXXX)
 printf 'Socket path: %s/catee.sock\n' "$catee_run_dir"
-./build/catee-service "$catee_run_dir/catee.sock" "$PWD/build/enclave.signed.so"
+./build/catee-service "$catee_run_dir/catee.sock" "$PWD/build/enclave.signed.so" "$catee_run_dir/admin.sealed" --init
 ```
 
 In a second SSH terminal, use the printed socket path:
@@ -75,9 +76,10 @@ python3 test/client.py /tmp/catee-demo.REPLACE/catee.sock 20:00
 ```
 
 Expected outputs: `14:00 -> true (HW DEBUG)` and `20:00 -> false (HW DEBUG)`.
-Stop the service with Ctrl+C. It removes its own socket on normal shutdown;
-remove the now-empty temporary directory yourself. Following a forced kill,
-choose a fresh private directory; the service never overwrites an existing path.
+Stop the service with Ctrl+C. It removes its own socket on normal shutdown.
+Keep the directory and sealed state to restart with the same grants; omit
+`--init` on subsequent starts. Following a forced kill, confirm the old process
+has stopped before removing its stale socket; preserve the state and lock files.
 
 ## Java socket client
 
@@ -125,7 +127,8 @@ in, pass these JVM properties when starting Cassandra (for example through
 -Dcassandra.catee.timeout_ms=2000
 ```
 
-Run the existing native service under the same OS user. Settings are captured when
+Run the native service under the same OS user, supplying its state file as shown
+above. Settings are captured when
 `CassandraAuthorizer` is constructed. The socket path must be absolute and the
 timeout must be 1–60000 milliseconds. These are connection settings, not policy
 configuration; the enclave window remains fixed at 09:00–17:00.
@@ -224,13 +227,13 @@ As in PATEE, these ECALLs do not authenticate the administrator. A caller able t
 invoke them can change grants; database-side checks do not authenticate direct
 service clients.
 Socket operations and the existing Cassandra administration checks now invoke
-these ECALLs. Each new enclave starts empty; there is no
-persistence yet.
+these ECALLs. The service restores the sealed administrative table before
+listening; explicit first-time initialization starts with no grants.
 `make test-admin` runs host-side C++ tests against the same store implementation;
 these test data-structure behavior, not SGX isolation. `make test-admin-hw` invokes
 the real ECALLs on SGX hardware, covering grant/revoke/check, invalid inputs,
-capacity, and empty state after enclave recreation. `make test` runs both suites
-and the existing hardware-service tests.
+capacity, sealing/unsealing, and rejection of tampered state. `make test` runs both
+suites, the existing service tests, and sealing/restart tests.
 
 The socket follows PATEE's grant/revoke/check request dispatch, retaining CATEE's
 text framing rather than PATEE's binary C structures:
@@ -259,6 +262,40 @@ the existing ABAC statements, but a same-UID process can call the service direct
 checks Java-to-enclave operations, role encoding, capacity errors, fragmented and
 malformed requests, and strict response handling against controlled peers.
 
+## Sealed administrative state
+
+The service takes `SOCKET_PATH ENCLAVE_PATH STATE_FILE [--init]`. Like PATEE's
+reseal/load flow, it uses enclave ECALLs backed by `sgx_seal_data` and
+`sgx_unseal_data`; the service stores sealed bytes, not a plaintext table. The sealed payload
+contains a format version and the bounded administrative table. Working hours
+remain compiled constants and do not require mutable persisted configuration.
+
+Unlike PATEE's automatic initialization on a missing file, `--init` explicitly
+creates a new empty state file and refuses an existing file. Normal startup
+rejects missing, corrupted, truncated, symlinked, or incompatible state before
+opening the socket. The state file and socket need separate paths in owned
+private directories. State files are mode 0600. Keep runtime state outside Git.
+
+Successful grant/revoke operations seal the updated table, write an exclusively
+created `.tmp` file, sync it, atomically replace the state file, and sync its parent
+directory before replying `OK`. A persistence failure rejects the request and
+stops the service so modified but unpersisted memory cannot drive later checks.
+The last acknowledged state survives a failure before replacement; a lost reply
+or failure after replacement can leave the mutation persisted. There is no retry
+or transaction protocol across Cassandra and the service.
+
+A `.lock` file is held with an exclusive process lock to prevent cooperating
+services from writing the same state concurrently. Locks are released on process
+exit; retain the lock file between starts. Failed temporary/partial files are
+preserved for inspection rather than silently reset. Do not promote a leftover
+`.tmp` file automatically; recovery requires an explicit decision.
+
+Sealing detects altered bytes, but does not prevent deletion or replay of an
+older valid sealed file. An explicit reinitialization after deletion creates a
+new empty instance, not recovery. There is no rollback protection, remote
+attestation, state migration, or production-enclave security claim. Debug mode
+and the trusted database/service caller assumptions remain unchanged.
+
 ## Deliberately small scope
 
 - One request per connection: ASCII `CHECK <minute>\n` (minute 0–1439), or an
@@ -275,7 +312,7 @@ malformed requests, and strict response handling against controlled peers.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There are no new CQL administration commands, sealing,
+binary protocol in the design draft. There are no new CQL administration commands,
 enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
