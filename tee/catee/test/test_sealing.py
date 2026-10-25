@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """Hardware sealing, restart, and persistence-failure checks in isolated directories."""
+import os
 import pathlib
+import struct
+import concurrent.futures
 import subprocess
 import tempfile
 import time
 import unittest
 
-from test_service import SERVICE, ENCLAVE, exchange
+from test_service import SERVICE, ENCLAVE, ROOT, exchange
 
 
 class SealingTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # Python closes inherited jobserver descriptors; do not forward their flags.
+        environment = {key: value for key, value in os.environ.items() if key not in ("MAKEFLAGS", "MFLAGS")}
+        subprocess.run(["make", "-C", str(ROOT), "sealing-fixture"], env=environment, check=True, timeout=60)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory(prefix="catee-sealing-")
         self.addCleanup(directory.cleanup)
@@ -119,6 +128,133 @@ class SealingTest(unittest.TestCase):
         pending.unlink()
         self.start()
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+
+    def lifecycle(self, operation, role="alice"):
+        return exchange(self.path, [f"{operation}_ROLE_DELETE {role.encode().hex()}\n".encode()])
+
+    def test_pending_deletion_survives_sigkill_and_finish_frees_slot(self):
+        process = self.start(True)
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 3\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", self.lifecycle("FINISH"))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN"))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN"))
+        process.kill()
+        process.wait(timeout=3)
+        # SIGKILL leaves the socket behind; remove only this isolated test socket.
+        self.path.unlink()
+        process = self.start()
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 3\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"REVOKE_ADMIN_PRIV 616c696365 3\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("FINISH"))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("FINISH"))
+        self.stop(process)
+        self.start()
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 3\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 4\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 3\n"]))
+
+    def test_failed_begin_and_finish_do_not_acknowledge_or_lose_durable_marker(self):
+        process = self.start(True)
+        pending = pathlib.Path(str(self.state) + ".tmp")
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        original = self.state.read_bytes()
+        pending.write_text("preserve")
+        self.assertEqual(b"ERROR persistence_failure\n", self.lifecycle("BEGIN"))
+        self.assertNotEqual(0, process.wait(timeout=3))
+        self.assertEqual(original, self.state.read_bytes())
+        pending.unlink()
+        process = self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN"))
+        original = self.state.read_bytes()
+        pending.write_text("preserve")
+        self.assertEqual(b"ERROR persistence_failure\n", self.lifecycle("FINISH"))
+        self.assertNotEqual(0, process.wait(timeout=3))
+        self.assertEqual(original, self.state.read_bytes())
+        pending.unlink()
+        self.start()
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("FINISH"))
+
+    def test_begin_at_capacity_and_slot_reuse(self):
+        self.start(True)
+        for i in range(32):
+            self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN", f"role{i}"))
+        self.assertEqual(b"ERROR admin_operation_failed\n", self.lifecycle("BEGIN", "overflow"))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN", "role0"))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("FINISH", "role0"))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN", "overflow"))
+
+    def test_concurrent_grants_cannot_clear_a_durable_marker(self):
+        self.start(True)
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN"))
+        def attempt(i):
+            operation = "GRANT" if i % 2 else "REVOKE"
+            return operation, exchange(self.path, [f"{operation}_ADMIN_PRIV 616c696365 1\n".encode()])
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as workers:
+            for operation, response in workers.map(attempt, range(64)):
+                self.assertEqual(b"ERROR admin_operation_failed\n" if operation == "GRANT" else b"OK HW DEBUG\n", response)
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+
+    def seal_payload(self, payload):
+        payload_file = self.state.with_name("payload.bin")
+        payload_file.write_bytes(payload)
+        self.state.unlink(missing_ok=True)
+        subprocess.run([str(ROOT / "build/fixture/seal-fixture"),
+                        str(ROOT / "build/fixture/enclave.signed.so"), str(payload_file), str(self.state)],
+                       check=True, capture_output=True, timeout=5)
+
+    @staticmethod
+    def payload(version=2, entries=(), count=None):
+        legacy = version == 1
+        packed = bytearray(struct.pack("<I", version))
+        for role, mask, pending in entries:
+            packed.extend(role.ljust(256, b"\0") + struct.pack("<I", mask))
+            if not legacy:
+                packed.extend(struct.pack("<I", pending))
+        packed.extend(bytes((32 - len(entries)) * (260 if legacy else 264)))
+        packed.extend(struct.pack("<I", len(entries) if count is None else count))
+        return bytes(packed)
+
+    def test_version_one_migration_preserves_all_grants(self):
+        entries = [(f"role{i}".encode(), i + 1, 0) for i in range(32)]
+        self.seal_payload(self.payload(version=1, entries=entries))
+        original = self.state.read_bytes()
+        process = self.start()
+        for role, mask, _ in entries:
+            for bit in [1 << i for i in range(6)] + [1 << 31]:
+                expected = b"ALLOW HW DEBUG\n" if mask & bit else b"DENY HW DEBUG\n"
+                self.assertEqual(expected, exchange(self.path, [f"CHECK_ADMIN_PRIV {role.hex()} {bit}\n".encode()]))
+        self.assertEqual(original, self.state.read_bytes()) # Read-only restoration does not rewrite.
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN", "role0"))
+        self.assertGreater(self.state.stat().st_size, len(original)) # First mutation writes v2.
+        self.stop(process)
+        self.start()
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 726f6c6530 1\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 726f6c6531 2\n"]))
+
+    def test_authenticated_invalid_payloads_rejected_without_reset(self):
+        cases = [self.payload(version=3), self.payload(count=33),
+                 self.payload(entries=[(b"alice", 1, 1)]),
+                 self.payload(entries=[(b"alice", 0, 2)]),
+                 self.payload(entries=[(b"", 0, 1)]),
+                 self.payload(entries=[(b"x" * 256, 0, 1)]),
+                 self.payload(entries=[(b"alice", 0, 1), (b"alice", 1, 0)]),
+                 self.payload(version=1, count=33),
+                 self.payload(version=1, entries=[(b"x" * 256, 1, 0)]),
+                 self.payload(version=1, entries=[(b"alice", 1, 0), (b"alice", 2, 0)]),
+                 self.payload(version=1)[:-1], b"short",
+                 struct.pack("<I", 1) + self.payload()[4:],
+                 struct.pack("<I", 2) + self.payload(version=1)[4:]]
+        for payload in cases:
+            with self.subTest(size=len(payload), prefix=payload[:4]):
+                self.seal_payload(payload)
+                original = self.state.read_bytes()
+                self.rejected_start()
+                self.assertEqual(original, self.state.read_bytes())
+
 
 
 if __name__ == "__main__":

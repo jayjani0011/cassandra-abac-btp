@@ -25,6 +25,13 @@ def java_admin(path, operation, role="alice", mask=1, timeout=2000):
                           capture_output=True, text=True, timeout=5)
 
 
+def java_lifecycle(path, operation, role="alice", timeout=2000):
+    return subprocess.run(["java", "-cp", f"{ROOT}/build/java:{ROOT}/build/java-deps/*",
+                           "org.apache.cassandra.auth.catee.CateeClientDriver",
+                           str(path), operation, role, str(timeout)],
+                          capture_output=True, text=True, timeout=5)
+
+
 class JavaHardwareTest(HardwareBase):
     def test_java_admin_operations(self):
         for role in ["alice", "Research team जय", "a" * 255]:
@@ -39,6 +46,26 @@ class JavaHardwareTest(HardwareBase):
                     self.assertEqual(f"{expected} HW DEBUG\n", result.stdout)
         self.assertEqual("DENY HW DEBUG\n", java_admin(self.path, "CHECK", "Alice").stdout)
         self.assertEqual(0, java_admin(self.path, "REVOKE", "missing").returncode)
+
+    def test_java_role_lifecycle(self):
+        for role in ["alice", "Research team जय", "a" * 255]:
+            self.assertEqual(0, java_admin(self.path, "GRANT", role, 3).returncode)
+            self.assertNotEqual(0, java_lifecycle(self.path, "FINISH_ROLE_DELETE", role).returncode)
+            for _ in range(2):
+                result = java_lifecycle(self.path, "BEGIN_ROLE_DELETE", role)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual("OK HW DEBUG\n", result.stdout)
+            self.assertEqual("DENY HW DEBUG\n", java_admin(self.path, "CHECK", role).stdout)
+            self.assertNotEqual(0, java_admin(self.path, "GRANT", role).returncode)
+            self.assertEqual(0, java_admin(self.path, "REVOKE", role).returncode)
+            self.assertNotEqual(0, java_admin(self.path, "GRANT", role).returncode)
+            for _ in range(2):
+                self.assertEqual(0, java_lifecycle(self.path, "FINISH_ROLE_DELETE", role).returncode)
+            self.assertEqual("DENY HW DEBUG\n", java_admin(self.path, "CHECK", role).stdout)
+            self.assertEqual(0, java_admin(self.path, "GRANT", role).returncode)
+        for operation in [b"BEGIN_ROLE_DELETE", b"FINISH_ROLE_DELETE"]:
+            for suffix in [b"", b" ", b" 00", b" 6", b" zz", b" 61 1", b" " + b"61" * 256]:
+                self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [operation + suffix + b"\n"]))
 
     def test_admin_malformed_requests(self):
         for request in [b"GRANT_ADMIN_PRIV 61 0\n", b"GRANT_ADMIN_PRIV 00 1\n",
@@ -86,6 +113,15 @@ class JavaFailureTest(unittest.TestCase):
                     self.assertNotEqual(0, result.returncode)
                     self.assertEqual("", result.stdout)
 
+    def test_lifecycle_invalid_inputs_and_absent_service(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "absent.sock"
+            for operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]:
+                for role in ["alice", "", "a" * 256, "é" * 128]:
+                    result = java_lifecycle(path, operation, role)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertEqual("", result.stdout)
+
     def test_absent_service_and_invalid_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "absent.sock"
@@ -105,6 +141,11 @@ class JavaFailureTest(unittest.TestCase):
             ("GRANT", b"ALLOW HW DEBUG\n", 1), ("REVOKE", b"DENY HW DEBUG\n", 1),
             ("CHECK", b"OK HW DEBUG\n", 1), ("CHECK", b"ERROR enclave_failure\n", 1),
             ("GRANT", None, 1), ("REVOKE", b"ERROR admin_operation_failed\n", 1)]
+        cases += [(operation, response, expected)
+                  for operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]
+                  for response, expected in [(b"OK HW DEBUG\n", 0), (b"ALLOW HW DEBUG\n", 1),
+                                             (b"DENY HW DEBUG\n", 1), (b"ERROR persistence_failure\n", 1),
+                                             (b"OK HW DEBUG", 1), (b"x" * 65, 1), (None, 1)]]
         for operation, response, expected in cases:
             with self.subTest(operation=operation, response=response), tempfile.TemporaryDirectory() as directory:
                 path = pathlib.Path(directory) / "mock.sock"
@@ -126,6 +167,8 @@ class JavaFailureTest(unittest.TestCase):
                                     request.extend(chunk)
                                 expected_request = (f"{operation}_ADMIN_PRIV 616c696365 1\n".encode()
                                                     if operation else b"CHECK 840\n")
+                                if operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]:
+                                    expected_request = f"{operation} 616c696365\n".encode()
                                 if request != expected_request:
                                     raise RuntimeError("Incorrect Java request")
                                 if response is None:
@@ -145,7 +188,10 @@ class JavaFailureTest(unittest.TestCase):
                     worker = threading.Thread(target=serve)
                     worker.start()
                     try:
-                        result = java_admin(path, operation, timeout=500) if operation else java_client(path)
+                        if operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]:
+                            result = java_lifecycle(path, operation, timeout=500)
+                        else:
+                            result = java_admin(path, operation, timeout=500) if operation else java_client(path)
                     finally:
                         worker.join(timeout=4)
                     self.assertFalse(worker.is_alive())

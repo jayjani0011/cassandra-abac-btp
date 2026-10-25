@@ -9,6 +9,15 @@ public final class CateeClientDriver
     {
         try
         {
+            if (args.length == 4)
+            {
+                CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[3]));
+                if (args[1].equals("BEGIN_ROLE_DELETE")) client.beginRoleDeletion(args[2]);
+                else if (args[1].equals("FINISH_ROLE_DELETE")) client.finishRoleDeletion(args[2]);
+                else throw new IllegalArgumentException("Unknown lifecycle operation");
+                System.out.println("OK HW DEBUG");
+                return;
+            }
             if (args.length == 5)
             {
                 CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[4]));

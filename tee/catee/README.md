@@ -197,6 +197,44 @@ yet. Dropping and recreating a name can still reuse a stale protected grant.
 The native socket continues to trust the permitted OS UID; these CQL checks do
 not authenticate direct socket callers.
 
+## Protected role-deletion operations
+
+The Java client now exposes `beginRoleDeletion(role)` and `finishRoleDeletion(role)`.
+Their socket requests use hex-encoded role names, like the existing admin requests:
+
+```text
+BEGIN_ROLE_DELETE <hex-role>\n
+FINISH_ROLE_DELETE <hex-role>\n
+```
+
+BEGIN clears all privileges and records a deletion-pending marker. Checks return
+DENY and grants fail while that marker exists; ordinary revocation cannot remove
+it. FINISH requires a pending marker and removes the entry completely, freeing
+its slot. Repeated BEGIN on a pending role and FINISH on an absent role succeed.
+FINISH on an active entry fails. Beginning deletion of an absent role reserves a
+slot; a full 32-entry table rejects it without changing state.
+
+Successful operations use the same seal/write/fsync/rename/directory-fsync path as
+admin updates. Persistence failure returns ERROR and stops the service. The new
+version-2 sealed state includes deletion markers. Version-1 state is restored
+with its existing grants intact and no markers; the next mutation writes version
+2. Keep the same development signing key and compatible SGX sealing identity.
+Older binaries cannot read version 2; do not downgrade them onto updated state.
+The `--init` option is never a migration or recovery mechanism.
+
+**Not connected to DROP ROLE/DROP USER yet:** these operations provide the enclave
+support for the next commit. Cassandra-side ordering, locking, recreation and
+retry/recovery handling remain pending. The service does not verify whether a
+Cassandra role was actually deleted; it still trusts its permitted OS caller.
+A restart restores durable markers but does not finish Cassandra deletion.
+SIGKILL can leave a stale socket that must be removed after verifying the service
+has stopped. Sealing still does not prevent replay of an older valid snapshot.
+
+Tests use a separate fixture enclave under `test/sealing_fixture`, signed with the
+local development key, to generate real version-1 state and authenticated invalid
+payloads. Its ECALL is not included in the service enclave. `make test` builds it;
+`test_sealing.py` also ensures this fixture is built when invoked directly.
+
 ## Administrative privilege store and ECALLs
 
 `src/Enclave/AdminPrivileges.h` follows PATEE's `admin_priv_entry_t` table:
@@ -315,7 +353,7 @@ preserved for inspection rather than silently reset. Do not promote a leftover
 Sealing detects altered bytes, but does not prevent deletion or replay of an
 older valid sealed file. An explicit reinitialization after deletion creates a
 new empty instance, not recovery. There is no rollback protection, remote
-attestation, state migration, or production-enclave security claim. Debug mode
+attestation, general state migration, or production-enclave security claim. Debug mode
 and the trusted database/service caller assumptions remain unchanged.
 
 ## Deliberately small scope

@@ -34,7 +34,9 @@ enum RequestType
     SGX_MSG_CHECK_WORKTIME,
     SGX_MSG_GRANT_ADMIN_PRIV,
     SGX_MSG_REVOKE_ADMIN_PRIV,
-    SGX_MSG_CHECK_ADMIN_PRIV
+    SGX_MSG_CHECK_ADMIN_PRIV,
+    SGX_MSG_BEGIN_ROLE_DELETE,
+    SGX_MSG_FINISH_ROLE_DELETE
 };
 
 sgx_enclave_id_t global_eid = 0;
@@ -180,15 +182,16 @@ void reseal_admin(bool initialize = false)
 
 void load_admin_state()
 {
-    auto bytes = sealed_buffer();
+    std::vector<uint8_t> bytes;
     int fd = open(state_path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) throw std::runtime_error("Cannot open sealed state; initialize explicitly for a new instance");
     try
     {
         struct stat info{};
         if (fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_uid != geteuid()
-            || (info.st_mode & 0077) != 0 || info.st_size != static_cast<off_t>(bytes.size()))
+            || (info.st_mode & 0077) != 0 || info.st_size <= 0 || info.st_size > 65536)
             throw std::runtime_error("Invalid sealed state file");
+        bytes.resize(static_cast<size_t>(info.st_size));
         transfer_state(fd, bytes, false);
     }
     catch (...)
@@ -238,23 +241,26 @@ std::string read_request(int fd)
     throw std::runtime_error("Incomplete, oversized, or timed-out request");
 }
 
+bool parse_role(const std::string& hex, char (&role)[256])
+{
+    if (hex.empty() || hex.size() > 510 || hex.size() % 2 != 0) return false;
+    for (size_t i = 0; i < hex.size() / 2; ++i)
+    {
+        unsigned byte = 0;
+        const char *begin = hex.data() + i * 2;
+        auto parsed = std::from_chars(begin, begin + 2, byte, 16);
+        if (parsed.ec != std::errc() || parsed.ptr != begin + 2 || byte == 0) return false;
+        role[i] = static_cast<char>(byte);
+    }
+    role[hex.size() / 2] = '\0';
+    return true;
+}
+
 bool parse_admin_request(const std::string& request, char (&role)[256], uint32_t& mask)
 {
     size_t first = request.find(' '), last = request.rfind(' ');
-    if (first == std::string::npos || first == last)
-        return false;
-    size_t length = last - first - 1;
-    if (length == 0 || length > 510 || length % 2 != 0)
-        return false;
-    for (size_t i = 0; i < length / 2; ++i)
-    {
-        unsigned byte = 0;
-        const char *begin = request.data() + first + 1 + i * 2;
-        auto parsed = std::from_chars(begin, begin + 2, byte, 16);
-        if (parsed.ec != std::errc() || parsed.ptr != begin + 2 || byte == 0)
-            return false;
-        role[i] = static_cast<char>(byte);
-    }
+    if (first == std::string::npos || first == last
+        || !parse_role(request.substr(first + 1, last - first - 1), role)) return false;
     const char *end = request.data() + request.size();
     auto parsed = std::from_chars(request.data() + last + 1, end, mask);
     return parsed.ec == std::errc() && parsed.ptr == end && mask != 0;
@@ -362,6 +368,8 @@ int main(int argc, char **argv)
             if (request.compare(0, 17, "GRANT_ADMIN_PRIV ") == 0) type = SGX_MSG_GRANT_ADMIN_PRIV;
             if (request.compare(0, 18, "REVOKE_ADMIN_PRIV ") == 0) type = SGX_MSG_REVOKE_ADMIN_PRIV;
             if (request.compare(0, 17, "CHECK_ADMIN_PRIV ") == 0) type = SGX_MSG_CHECK_ADMIN_PRIV;
+            if (request.compare(0, 18, "BEGIN_ROLE_DELETE ") == 0) type = SGX_MSG_BEGIN_ROLE_DELETE;
+            if (request.compare(0, 19, "FINISH_ROLE_DELETE ") == 0) type = SGX_MSG_FINISH_ROLE_DELETE;
             switch (type)
             {
                 case SGX_MSG_CHECK_WORKTIME:
@@ -395,19 +403,27 @@ int main(int argc, char **argv)
                         reply(client_fd, allowed ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
                     break;
                 }
+                case SGX_MSG_BEGIN_ROLE_DELETE:
+                case SGX_MSG_FINISH_ROLE_DELETE:
                 case SGX_MSG_GRANT_ADMIN_PRIV:
                 case SGX_MSG_REVOKE_ADMIN_PRIV:
                 case SGX_MSG_CHECK_ADMIN_PRIV:
                 {
                     char role[256]{};
                     uint32_t mask = 0;
-                    if (!parse_admin_request(request, role, mask))
+                    bool lifecycle = type == SGX_MSG_BEGIN_ROLE_DELETE || type == SGX_MSG_FINISH_ROLE_DELETE;
+                    if (lifecycle ? !parse_role(request.substr(request.find(' ') + 1), role)
+                                  : !parse_admin_request(request, role, mask))
                     {
                         reply(client_fd, "ERROR invalid_request\n");
                         break;
                     }
                     int result = -1, allowed = 0;
-                    if (type == SGX_MSG_GRANT_ADMIN_PRIV)
+                    if (type == SGX_MSG_BEGIN_ROLE_DELETE)
+                        ret = enclave_begin_role_delete(global_eid, &result, role);
+                    else if (type == SGX_MSG_FINISH_ROLE_DELETE)
+                        ret = enclave_finish_role_delete(global_eid, &result, role);
+                    else if (type == SGX_MSG_GRANT_ADMIN_PRIV)
                         ret = enclave_grant_admin_priv(global_eid, &result, role, mask);
                     else if (type == SGX_MSG_REVOKE_ADMIN_PRIV)
                         ret = enclave_revoke_admin_priv(global_eid, &result, role, mask);

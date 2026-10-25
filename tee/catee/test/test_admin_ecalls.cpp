@@ -43,6 +43,8 @@ int main(int argc, char **argv)
     {
         assert(enclave_grant_admin_priv(enclave, &result, role, 1) == SGX_SUCCESS && result != 0);
         assert(enclave_revoke_admin_priv(enclave, &result, role, 1) == SGX_SUCCESS && result != 0);
+        assert(enclave_begin_role_delete(enclave, &result, role) == SGX_SUCCESS && result != 0);
+        assert(enclave_finish_role_delete(enclave, &result, role) == SGX_SUCCESS && result != 0);
         allowed = -1;
         assert(enclave_check_admin_priv(enclave, &result, role, 1, &allowed) == SGX_SUCCESS);
         assert(result != 0 && allowed == 0);
@@ -72,6 +74,12 @@ int main(int argc, char **argv)
     assert(enclave_revoke_admin_priv(enclave, &result, alice, 6) == SGX_SUCCESS && result == 0);
     expect_check(enclave, alice, 6, 0);
 
+    assert(enclave_finish_role_delete(enclave, &result, longest) == SGX_SUCCESS && result != 0);
+    assert(enclave_begin_role_delete(enclave, &result, bob) == SGX_SUCCESS && result != 0); // full
+    assert(enclave_begin_role_delete(enclave, &result, alice) == SGX_SUCCESS && result == 0);
+    assert(enclave_begin_role_delete(enclave, &result, alice) == SGX_SUCCESS && result == 0);
+    expect_check(enclave, alice, UINT32_MAX, 0);
+    assert(enclave_grant_admin_priv(enclave, &result, alice, 1) == SGX_SUCCESS && result != 0);
     uint32_t sealed_size = 0;
     assert(enclave_get_sealed_size(enclave, &result, &sealed_size) == SGX_SUCCESS && result == 0);
     std::vector<uint8_t> sealed(sealed_size);
@@ -82,6 +90,12 @@ int main(int argc, char **argv)
     expect_check(enclave, longest, 1, 0);
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result == 0);
     expect_check(enclave, longest, 1, 1);
+    expect_check(enclave, alice, UINT32_MAX, 0);
+    assert(enclave_grant_admin_priv(enclave, &result, alice, 1) == SGX_SUCCESS && result != 0);
+    assert(enclave_finish_role_delete(enclave, &result, alice) == SGX_SUCCESS && result == 0);
+    assert(enclave_finish_role_delete(enclave, &result, alice) == SGX_SUCCESS && result == 0);
+    assert(enclave_grant_admin_priv(enclave, &result, bob, 1) == SGX_SUCCESS && result == 0);
+    expect_check(enclave, bob, 1, 1);
     sealed.back() ^= 1;
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result != 0);
     expect_check(enclave, longest, 1, 1);

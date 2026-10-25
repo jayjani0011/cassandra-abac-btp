@@ -107,3 +107,41 @@ java-client: $(JAVA_JARS)
 
 test-java: all java-client
 	python3 test/test_java_client.py
+
+# Separate test enclave, signed with the local development key, for v1 migration
+# and authenticated-but-invalid payloads. Never linked into the service enclave.
+$(BUILD)/fixture:
+	mkdir -p $@
+
+$(BUILD)/fixture/Fixture_t.c $(BUILD)/fixture/Fixture_t.h $(BUILD)/fixture/Fixture_u.c $(BUILD)/fixture/Fixture_u.h &: test/sealing_fixture/Fixture.edl | $(BUILD)/fixture
+	$(EDGER) --trusted $< --search-path $(SGX_SDK)/include --trusted-dir $(BUILD)/fixture
+	$(EDGER) --untrusted $< --search-path $(SGX_SDK)/include --untrusted-dir $(BUILD)/fixture
+
+$(BUILD)/fixture/Fixture_t.o: $(BUILD)/fixture/Fixture_t.c $(BUILD)/fixture/Fixture_t.h
+	$(CC) $(TRUSTED_FLAGS) -I$(BUILD)/fixture -c $< -o $@
+
+$(BUILD)/fixture/Fixture.o: test/sealing_fixture/Fixture.cpp $(BUILD)/fixture/Fixture_t.h | $(BUILD)/fixture
+	$(CXX) $(TRUSTED_FLAGS) -I$(BUILD)/fixture -std=c++11 -nostdinc++ -I$(SGX_SDK)/include/libcxx -c $< -o $@
+
+$(BUILD)/fixture/Fixture_u.o: $(BUILD)/fixture/Fixture_u.c $(BUILD)/fixture/Fixture_u.h
+	$(CC) $(HOST_FLAGS) -I$(BUILD)/fixture -c $< -o $@
+
+$(BUILD)/fixture/enclave.so: $(BUILD)/fixture/Fixture.o $(BUILD)/fixture/Fixture_t.o src/Enclave/Enclave.lds
+	$(CXX) -m64 $(filter %.o,$^) -o $@ $(MITIGATION_LDFLAGS) \
+	    -Wl,-z,relro,-z,now,-z,noexecstack -nostdlib -nodefaultlibs -nostartfiles \
+	    -L$(SGX_TRUSTED_LIBRARY_PATH) -Wl,--no-undefined \
+	    -Wl,--whole-archive -lsgx_trts -Wl,--no-whole-archive \
+	    -Wl,--start-group -lsgx_tstdc -lsgx_tcrypto -lsgx_tservice -Wl,--end-group \
+	    -Wl,-Bstatic,-Bsymbolic,-pie,-eenclave_entry,--export-dynamic \
+	    -Wl,--defsym,__ImageBase=0,--gc-sections,--version-script=src/Enclave/Enclave.lds
+
+$(BUILD)/fixture/enclave.signed.so: $(BUILD)/fixture/enclave.so src/Enclave/Enclave.config.xml $(KEY)
+	$(SIGNER) sign -key $(KEY) -enclave $< -out $@ -config src/Enclave/Enclave.config.xml
+
+$(BUILD)/fixture/seal-fixture: test/sealing_fixture/seal_fixture.cpp $(BUILD)/fixture/Fixture_u.o
+	$(CXX) $(HOST_FLAGS) -I$(BUILD)/fixture -std=c++11 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
+
+.PHONY: sealing-fixture
+sealing-fixture: $(BUILD)/fixture/enclave.signed.so $(BUILD)/fixture/seal-fixture
+
+test: sealing-fixture

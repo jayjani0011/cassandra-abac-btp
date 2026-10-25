@@ -50,11 +50,28 @@ public final class CateeClient
         return predicate(request(adminRequest("CHECK_ADMIN_PRIV", role, mask)));
     }
 
+    public void beginRoleDeletion(String role) throws IOException
+    {
+        requireSuccess(request("BEGIN_ROLE_DELETE " + encodeRole(role)));
+    }
+
+    public void finishRoleDeletion(String role) throws IOException
+    {
+        requireSuccess(request("FINISH_ROLE_DELETE " + encodeRole(role)));
+    }
+
     private static String adminRequest(String operation, String role, int mask)
     {
+        if (mask == 0)
+            throw new IllegalArgumentException("A nonzero privilege mask is required");
+        return operation + " " + encodeRole(role) + " " + Integer.toUnsignedString(mask);
+    }
+
+    private static String encodeRole(String role)
+    {
         if (role == null || role.isEmpty() || role.indexOf('\0') >= 0
-            || !StandardCharsets.UTF_8.newEncoder().canEncode(role) || mask == 0)
-            throw new IllegalArgumentException("A role name and nonzero privilege mask are required");
+            || !StandardCharsets.UTF_8.newEncoder().canEncode(role))
+            throw new IllegalArgumentException("A valid role name is required");
         byte[] bytes = role.getBytes(StandardCharsets.UTF_8);
         if (bytes.length > 255)
             throw new IllegalArgumentException("Role name exceeds 255 UTF-8 bytes");
@@ -64,7 +81,7 @@ public final class CateeClient
             hex.append(Character.forDigit((value & 0xff) >>> 4, 16));
             hex.append(Character.forDigit(value & 15, 16));
         }
-        return operation + " " + hex + " " + Integer.toUnsignedString(mask);
+        return hex.toString();
     }
 
     private static boolean predicate(String response) throws IOException

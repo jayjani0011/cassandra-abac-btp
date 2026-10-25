@@ -4,6 +4,8 @@ enclave {
         public int enclave_grant_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask);
         public int enclave_revoke_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask);
         public int enclave_check_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask, [out] int *allowed);
+        public int enclave_begin_role_delete([in, count=256] const char *role_name);
+        public int enclave_finish_role_delete([in, count=256] const char *role_name);
         public int enclave_get_sealed_size([out] uint32_t *sealed_size);
         public int enclave_seal_admin([out, size=sealed_size] uint8_t *sealed_data, uint32_t sealed_size);
         public int enclave_unseal_admin([in, size=sealed_size] const uint8_t *sealed_data, uint32_t sealed_size);
