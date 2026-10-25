@@ -172,6 +172,31 @@ service to verify failure despite an RBAC grant, and verifies that removing the
 worktime condition permits access without the service. All Cassandra test data is
 isolated under the test build directory; historical benchmarks are not rerun.
 
+## CQL administrative grants
+
+Following PATEE's `GRANT/REVOKE ABAC_ADMIN` interface, Cassandra superusers can run:
+
+```cql
+GRANT ABAC_ADMIN { CREATE_POLICY, DROP_POLICY } TO alice;
+REVOKE ABAC_ADMIN { CREATE_POLICY } FROM alice;
+```
+
+Supported operations are `CREATE_ATTRIBUTE`, `DROP_ATTRIBUTE`, `ALTER_ATTRIBUTE`,
+`ASSIGN_USER_ATTRIBUTE`, `REVOKE_USER_ATTRIBUTE`, `ASSIGN_RESOURCE_ATTRIBUTE`,
+`REVOKE_RESOURCE_ATTRIBUTE`, `CREATE_POLICY`, and `DROP_POLICY`.
+The target must exist. Grants additionally require `LOGIN = true`, because CATEE
+checks direct primary-role privileges; it does not inherit these grants through
+role membership. Revocation still works after login is disabled.
+These commands use the existing Java client and enclave ECALLs. They reject
+requests when CATEE is disabled or the service update fails; success follows
+sealed-state persistence. Existing native ABAC commands retain their behavior.
+The new grammar does not configure working hours.
+
+Role deletion cleanup and concurrent role lifecycle coordination are not included
+yet. Dropping and recreating a name can still reuse a stale protected grant.
+The native socket continues to trust the permitted OS UID; these CQL checks do
+not authenticate direct socket callers.
+
 ## Administrative privilege store and ECALLs
 
 `src/Enclave/AdminPrivileges.h` follows PATEE's `admin_priv_entry_t` table:
@@ -208,12 +233,9 @@ mode the original scoped `ClientState.ensurePermission` check is used unchanged.
 General data-access authorization and ordinary permission GRANT/REVOKE are not
 changed by this hook.
 
-**Deferred pending a further decision:** new CQL administration syntax, grammar
-changes, and a CQL interface for granting/revoking CATEE privileges. Existing CQL
-ABAC commands keep their syntax. For now, grants are provisioned through the Java
-client (as the integration test does), using the mask mapping above; this is not
-an authenticated end-user administration interface. ALTER/ENABLE/DISABLE_POLICY
-have no existing statement handlers and are not exposed as CATEE operations.
+**Still deferred:** configurable environmental settings and their CQL syntax.
+Protected administrative grants now use the CQL commands above; the Java client
+remains a lower-level transport interface.
 
 The enclave exposes PATEE's `enclave_grant_admin_priv`,
 `enclave_revoke_admin_priv`, and `enclave_check_admin_priv` operations over this
@@ -312,8 +334,7 @@ and the trusted database/service caller assumptions remain unchanged.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There are no new CQL administration commands,
-enclave policy processing, or remote attestation in this
+binary protocol in the design draft. There is no enclave policy processing or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
 Architecture reference: [PATEE's pinned implementation](https://github.com/harshit-jain52/postgres/tree/79d3f29576419d457c516bcda5d757d99f104b14/tee).

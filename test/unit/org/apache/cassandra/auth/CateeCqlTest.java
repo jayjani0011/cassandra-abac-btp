@@ -77,6 +77,30 @@ public class CateeCqlTest extends CQLTester
         executeNet("CREATE ROLE catee_target WITH login=true AND password='test-password'");
         executeNet("CREATE ROLE catee_parent WITH login=false");
         executeNet("GRANT catee_parent TO catee_admin");
+        executeNet("GRANT ABAC_ADMIN { CREATE_POLICY, DROP_POLICY } TO catee_admin");
+        CateeClient provisioned = new CateeClient(socket, 2000);
+        assertTrue(provisioned.checkAdminPrivilege("catee_admin", CateeAdminPermission.mask(Permission.CREATE_POLICY)));
+        assertTrue(provisioned.checkAdminPrivilege("catee_admin", CateeAdminPermission.mask(Permission.DROP_POLICY)));
+        executeNet("REVOKE ABAC_ADMIN { CREATE_POLICY, DROP_POLICY } FROM catee_admin");
+        org.junit.Assert.assertFalse(provisioned.checkAdminPrivilege("catee_admin", CateeAdminPermission.mask(Permission.CREATE_POLICY)));
+        assertInvalidMessageNet("LOGIN = true", "GRANT ABAC_ADMIN { CREATE_POLICY } TO catee_parent");
+        assertInvalidMessageNet("does not exist", "GRANT ABAC_ADMIN { CREATE_POLICY } TO catee_missing");
+        assertInvalidMessageNet("Unsupported CATEE", "GRANT ABAC_ADMIN { SELECT } TO catee_admin");
+        assertInvalidMessageNet("Unsupported CATEE", "GRANT ABAC_ADMIN { ALTER_POLICY } TO catee_admin");
+        // The new token must remain usable as an ordinary unquoted role name.
+        executeNet("CREATE ROLE abac_admin WITH login=false");
+        executeNet("GRANT abac_admin TO catee_admin");
+        executeNet("REVOKE abac_admin FROM catee_admin");
+        executeNet("DROP ROLE abac_admin");
+        executeNet("CREATE ROLE \"Catee Quoted\" WITH login=true AND password='test-password'");
+        executeNet("GRANT ABAC_ADMIN { CREATE_POLICY } TO \"Catee Quoted\"");
+        executeNet("ALTER ROLE \"Catee Quoted\" WITH login=false");
+        executeNet("REVOKE ABAC_ADMIN { CREATE_POLICY } FROM \"Catee Quoted\"");
+        org.junit.Assert.assertFalse(provisioned.checkAdminPrivilege("Catee Quoted", CateeAdminPermission.mask(Permission.CREATE_POLICY)));
+        useUser("catee_admin", "test-password");
+        assertInvalidMessageNet("Only superusers", "GRANT ABAC_ADMIN { CREATE_POLICY } TO catee_admin");
+        assertInvalidMessageNet("Only superusers", "REVOKE ABAC_ADMIN { CREATE_POLICY } FROM catee_admin");
+        useSuperUser();
         // An ordinary RBAC administrative grant must not bypass the enclave map.
         QueryProcessor.executeInternal("INSERT INTO system_auth.role_permissions (role, resource, permissions) VALUES (?, ?, ?)",
                                        "catee_admin", RoleResource.root().getName(), java.util.Set.of("CREATE_ATTRIBUTE"));
@@ -102,10 +126,13 @@ public class CateeCqlTest extends CQLTester
         for (int i = 0; i < commands.length; ++i)
         {
             assertInvalidMessageNet("has no CATEE", commands[i]);
-            int mask = CateeAdminPermission.mask(permissions[i]);
-            administration.grantAdminPrivilege("catee_admin", mask);
+            useSuperUser();
+            executeNet("GRANT ABAC_ADMIN { " + permissions[i] + " } TO catee_admin");
+            useUser("catee_admin", "test-password");
             executeNet(commands[i]);
-            administration.revokeAdminPrivilege("catee_admin", mask);
+            useSuperUser();
+            executeNet("REVOKE ABAC_ADMIN { " + permissions[i] + " } FROM catee_admin");
+            useUser("catee_admin", "test-password");
         }
         assertInvalidMessageNet("has no CATEE", "CREATE ATTRIBUTE catee_revoked WITH TYPE text");
         administration.grantAdminPrivilege("catee_admin", CateeAdminPermission.mask(Permission.CREATE_ATTRIBUTE));
@@ -138,6 +165,7 @@ public class CateeCqlTest extends CQLTester
         useUser("catee_admin", "test-password");
         assertInvalidMessageNet("Required CATEE administration check failed", "CREATE ATTRIBUTE catee_unavailable WITH TYPE text");
         useSuperUser();
+        assertInvalidMessageNet("Required CATEE grant update failed", "GRANT ABAC_ADMIN { CREATE_POLICY } TO catee_admin");
         executeNet("CREATE ATTRIBUTE catee_superuser WITH TYPE text");
         executeNet("DROP ATTRIBUTE catee_superuser");
         useUser("catee_reader", "test-password");

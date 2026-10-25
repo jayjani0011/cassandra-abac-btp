@@ -237,7 +237,8 @@ options {
 
 cqlStatement returns [CQLStatement.Raw stmt]
     @after{ if (stmt != null) stmt.setBindVariables(bindVariables); }
-    : st1= selectStatement                 { $stmt = st1; }
+    : catee=abacAdminPrivilegeStatement      { $stmt = catee; }
+    | st1= selectStatement                 { $stmt = st1; }
     | st2= insertStatement                 { $stmt = st2; }
     | st3= updateStatement                 { $stmt = st3; }
     | st4= batchStatement                  { $stmt = st4; }
@@ -1350,6 +1351,16 @@ revokePermissionsStatement returns [RevokePermissionsStatement stmt]
       { $stmt = new RevokePermissionsStatement(filterPermissions($permissionOrAll.perms, $resource.res), $resource.res, revokee); }
     ;
 
+/** PATEE-style protected administrative grants. */
+abacAdminPrivilegeStatement returns [AbacAdminPrivilegeStatement stmt]
+    @init { boolean grant = false; Set<Permission> operations = EnumSet.noneOf(Permission.class); }
+    : (K_GRANT { grant = true; } | K_REVOKE)
+      K_ABAC_ADMIN '{' p=permission { operations.add($p.perm); }
+      (',' p=permission { operations.add($p.perm); })* '}'
+      ( {grant}? K_TO | {!grant}? K_FROM ) target=userOrRoleName
+      { $stmt = new AbacAdminPrivilegeStatement(target, operations, grant); }
+    ;
+
 /**
  * GRANT ROLE <rolename> TO <grantee>
  */
@@ -2366,7 +2377,8 @@ unreserved_function_keyword returns [String str]
     ;
 
 basic_unreserved_keyword returns [String str]
-    : k=( K_KEYS
+    : k=( K_ABAC_ADMIN
+        | K_KEYS
         | K_AS
         | K_CLUSTER
         | K_CLUSTERING

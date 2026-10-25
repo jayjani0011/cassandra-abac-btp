@@ -104,6 +104,14 @@ public class CassandraAuthorizer implements IAuthorizer
         return cateeClient.checkAdminPrivilege(user.getPrimaryRole().getRoleName(), mask);
     }
 
+    void modifyCateeAdminPrivilege(String role, int mask, boolean grant) throws IOException
+    {
+        if (grant)
+            cateeClient.grantAdminPrivilege(role, mask);
+        else
+            cateeClient.revokeAdminPrivilege(role, mask);
+    }
+
     // Returns every permission on the resource granted to the user either directly
     // or indirectly via roles granted to the user.
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)

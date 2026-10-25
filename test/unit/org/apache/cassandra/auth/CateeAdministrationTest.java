@@ -12,6 +12,7 @@ import org.apache.cassandra.auth.catee.CateeAdminPermission;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.exceptions.UnauthorizedException;
+import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.service.ClientState;
 
 import static org.junit.Assert.*;
@@ -28,6 +29,14 @@ public class CateeAdministrationTest extends CQLTester
         boolean enabled = true;
         Boolean allowed = false;
         int checks, observedMask;
+        boolean modified, granted;
+        String target;
+
+        void modifyCateeAdminPrivilege(String role, int mask, boolean grant) throws IOException
+        {
+            if (allowed == null) throw new IOException("Service unavailable");
+            modified = true; target = role; observedMask = mask; granted = grant;
+        }
         AuthenticatedUser observedUser;
 
         boolean isCateeEnabled() { return enabled; }
@@ -137,4 +146,70 @@ public class CateeAdministrationTest extends CQLTester
         verify(state).ensurePermission(Permission.CREATE_ATTRIBUTE, RoleResource.root());
         assertEquals(0, authorizer.checks);
     }
+    @Test
+    public void provisioningValidatesCallerTargetModeAndTransport()
+    {
+        IRoleManager previousRoles = DatabaseDescriptor.getRoleManager();
+        IRoleManager roles = mock(IRoleManager.class);
+        RoleResource target = RoleResource.role("alice");
+        Set<Permission> operations = Set.of(Permission.CREATE_POLICY, Permission.DROP_POLICY);
+        DatabaseDescriptor.setRoleManager(roles);
+        try
+        {
+            try { CateeAdministration.modifyPrivileges(state, target, operations, true); fail(); }
+            catch (UnauthorizedException expected) { }
+            verifyNoInteractions(roles);
+            when(state.isSuper()).thenReturn(true);
+            authorizer.enabled = false;
+            expectInvalidProvisioning(target, operations, true, "not enabled");
+            authorizer.enabled = true;
+            expectInvalidProvisioning(target, operations, true, "does not exist");
+            when(roles.isExistingRole(target)).thenReturn(true);
+            expectInvalidProvisioning(target, operations, true, "LOGIN = true");
+            // Revocation remains possible for a role whose login was disabled.
+            CateeAdministration.modifyPrivileges(state, target, operations, false);
+            assertTrue(authorizer.modified);
+            assertFalse(authorizer.granted);
+            when(roles.canLogin(target)).thenReturn(true);
+            CateeAdministration.modifyPrivileges(state, target, operations, true);
+            assertTrue(authorizer.granted);
+            assertEquals("alice", authorizer.target);
+            assertEquals((1 << 7) | (1 << 8), authorizer.observedMask);
+            expectInvalidProvisioning(target, Set.of(Permission.SELECT), true, "Unsupported CATEE");
+            expectInvalidProvisioning(target, Set.of(), true, "At least one");
+            authorizer.allowed = null;
+            expectInvalidProvisioning(target, operations, true, "Required CATEE grant update failed");
+            expectInvalidProvisioning(target, operations, false, "Required CATEE grant update failed");
+        }
+        finally { DatabaseDescriptor.setRoleManager(previousRoles); }
+    }
+
+    private void expectInvalidProvisioning(RoleResource role, Set<Permission> operations, boolean grant, String message)
+    {
+        try { CateeAdministration.modifyPrivileges(state, role, operations, grant); fail("Expected rejection"); }
+        catch (InvalidRequestException expected) { assertTrue(expected.getMessage(), expected.getMessage().contains(message)); }
+    }
+
+    @Test
+    public void parsesProtectedCommandsWithoutBreakingRoleGrants()
+    {
+        assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement(
+            "GRANT ABAC_ADMIN { CREATE_POLICY, DROP_POLICY } TO alice")
+            instanceof org.apache.cassandra.cql3.statements.AbacAdminPrivilegeStatement);
+        assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement(
+            "REVOKE ABAC_ADMIN { CREATE_POLICY } FROM alice")
+            instanceof org.apache.cassandra.cql3.statements.AbacAdminPrivilegeStatement);
+        assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement("GRANT abac_admin TO alice")
+            instanceof org.apache.cassandra.cql3.statements.GrantRoleStatement);
+        for (String query : new String[] {
+            "GRANT ABAC_ADMIN {} TO alice",
+            "GRANT ABAC_ADMIN { CREATE_POLICY } FROM alice",
+            "REVOKE ABAC_ADMIN { CREATE_POLICY } TO alice",
+            "GRANT ABAC_ADMIN { UNKNOWN_OPERATION } TO alice" })
+        {
+            try { org.apache.cassandra.cql3.QueryProcessor.parseStatement(query); fail(query); }
+            catch (org.apache.cassandra.exceptions.SyntaxException expected) { }
+        }
+    }
+
 }
