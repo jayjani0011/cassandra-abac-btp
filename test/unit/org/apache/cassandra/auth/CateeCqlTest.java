@@ -148,6 +148,9 @@ public class CateeCqlTest extends CQLTester
         assertTrue(client.checkWorktime(659));
         org.junit.Assert.assertFalse(client.checkWorktime(599));
         org.junit.Assert.assertFalse(client.checkWorktime(660));
+        restartService();
+        assertTrue(client.checkWorktime(630));
+        org.junit.Assert.assertFalse(client.checkWorktime(840));
         for (String values : new String[] {"-1,0,17,0", "24,0,17,0", "9,60,17,0", "9,0,17,60",
                                            "9,0,9,0", "17,0,9,0", "2147483648,0,17,0"})
         {
@@ -172,6 +175,10 @@ public class CateeCqlTest extends CQLTester
         useUser("catee_reader", "test-password");
         assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
         useSuperUser();
+        restartService();
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
         executeNet("SET ENV_ATTRIBUTE worktime = 0,0,23,59");
         useUser("catee_reader", "test-password");
         // The existing exclusive-end convention excludes the final minute of the day.
@@ -182,6 +189,21 @@ public class CateeCqlTest extends CQLTester
             assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
         useSuperUser();
         executeNet("SET ENV_ATTRIBUTE worktime = 9,0,17,0");
+        Path stateFile = Path.of(socket.toString() + ".sealed");
+        Path pendingFile = Path.of(socket.toString() + ".sealed.tmp");
+        byte[] acknowledgedState = Files.readAllBytes(stateFile);
+        Files.writeString(pendingFile, "preserve", java.nio.file.StandardOpenOption.CREATE_NEW);
+        try
+        {
+            assertInvalidMessageNet("Required CATEE window update failed", "SET ENV_ATTRIBUTE worktime = 10,0,11,0");
+            assertTrue(service.waitFor(3, TimeUnit.SECONDS));
+            org.junit.Assert.assertNotEquals(0, service.exitValue());
+            org.junit.Assert.assertArrayEquals(acknowledgedState, Files.readAllBytes(stateFile));
+        }
+        finally { Files.deleteIfExists(pendingFile); }
+        restartService();
+        assertTrue(client.checkWorktime(840));
+        org.junit.Assert.assertFalse(client.checkWorktime(1020));
         QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
                                        Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
         useUser("catee_reader", "test-password");

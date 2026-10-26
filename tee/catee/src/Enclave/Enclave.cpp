@@ -6,7 +6,21 @@
 // Administrative state starts with no grants in each enclave instance.
 static AdminPrivileges admin_privileges;
 
+// Configuration and comparison both live in the enclave.
+struct WorktimeWindow {
+    int start_minute;
+    int end_minute;
+};
+
+static WorktimeWindow worktime_window{9 * 60, 17 * 60};
+
 struct SealedAdminState {
+    uint32_t version;
+    AdminPrivileges privileges;
+    WorktimeWindow window;
+};
+
+struct LegacySealedAdminStateV2 {
     uint32_t version;
     AdminPrivileges privileges;
 };
@@ -22,7 +36,8 @@ struct LegacySealedAdminState {
     uint32_t count;
 };
 static_assert(sizeof(LegacySealedAdminState) == 8328, "Unexpected version-1 layout");
-static_assert(sizeof(SealedAdminState) == 8456, "Unexpected version-2 layout");
+static_assert(sizeof(LegacySealedAdminStateV2) == 8456, "Unexpected version-2 layout");
+static_assert(sizeof(SealedAdminState) == 8464, "Unexpected version-3 layout");
 
 int enclave_get_sealed_size(uint32_t *sealed_size)
 {
@@ -37,7 +52,7 @@ int enclave_seal_admin(uint8_t *sealed_data, uint32_t sealed_size)
     uint32_t required = 0;
     if (enclave_get_sealed_size(&required) != 0 || sealed_data == nullptr || sealed_size != required)
         return 1;
-    SealedAdminState state{2, admin_privileges};
+    SealedAdminState state{3, admin_privileges, worktime_window};
     return sgx_seal_data(0, nullptr, sizeof(state), reinterpret_cast<const uint8_t *>(&state),
                          sealed_size, reinterpret_cast<sgx_sealed_data_t *>(sealed_data)) == SGX_SUCCESS ? 0 : 1;
 }
@@ -47,7 +62,8 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     if (sealed_data == nullptr || sealed_size < sizeof(sgx_sealed_data_t)) return 1;
     const auto *sealed = reinterpret_cast<const sgx_sealed_data_t *>(sealed_data);
     uint32_t payload_size = sgx_get_encrypt_txt_len(sealed);
-    if ((payload_size != sizeof(SealedAdminState) && payload_size != sizeof(LegacySealedAdminState))
+    if ((payload_size != sizeof(SealedAdminState) && payload_size != sizeof(LegacySealedAdminState)
+         && payload_size != sizeof(LegacySealedAdminStateV2))
         || sgx_get_add_mac_txt_len(sealed) != 0
         || sealed_size != sgx_calc_sealed_data_size(0, payload_size))
         return 1;
@@ -57,13 +73,12 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     if (sgx_unseal_data(sealed, nullptr, &additional_size, payload, &size) != SGX_SUCCESS
         || size != payload_size)
         return 1;
-    SealedAdminState state{};
+    SealedAdminState state{3, {}, {9 * 60, 17 * 60}};
     if (size == sizeof(LegacySealedAdminState))
     {
         LegacySealedAdminState legacy{};
         memcpy(&legacy, payload, sizeof(legacy));
         if (legacy.version != 1 || legacy.count > AdminPrivileges::max_admins) return 1;
-        state.version = 2;
         state.privileges.count = legacy.count;
         for (unsigned i = 0; i < legacy.count; ++i)
         {
@@ -71,11 +86,22 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
             state.privileges.entries[i].priv_mask = legacy.entries[i].priv_mask;
         }
     }
+    else if (size == sizeof(LegacySealedAdminStateV2))
+    {
+        LegacySealedAdminStateV2 legacy{};
+        memcpy(&legacy, payload, sizeof(legacy));
+        if (legacy.version != 2) return 1;
+        state.privileges = legacy.privileges;
+    }
     else
     {
         memcpy(&state, payload, sizeof(state));
-        if (state.version != 2 || state.privileges.count > AdminPrivileges::max_admins) return 1;
+        if (state.version != 3) return 1;
     }
+    if (state.privileges.count > AdminPrivileges::max_admins
+        || state.window.start_minute < 0 || state.window.start_minute >= state.window.end_minute
+        || state.window.end_minute >= 1440)
+        return 1;
     for (unsigned i = 0; i < state.privileges.count; ++i)
     {
         if (!AdminPrivileges::valid_role(state.privileges.entries[i].role_name)
@@ -87,6 +113,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
                 return 1;
     }
     admin_privileges = state.privileges;
+    worktime_window = state.window;
     return 0;
 }
 
@@ -120,14 +147,6 @@ int enclave_check_admin_priv(const char *role_name, uint32_t priv_mask, int *all
     *allowed = admin_privileges.check(role_name, priv_mask);
     return 0;
 }
-
-// Configuration and comparison both live in the enclave.
-struct WorktimeWindow {
-    int start_minute;
-    int end_minute;
-};
-
-static WorktimeWindow worktime_window{9 * 60, 17 * 60};
 
 int enclave_set_timewindow(int start_minute, int end_minute)
 {

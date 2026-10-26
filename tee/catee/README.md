@@ -35,8 +35,9 @@ The window is node-local and applies to every CATEE worktime condition.
 CATEE must be enabled. Invalid updates, unsupported attributes, non-superusers,
 and required service failures reject the command. Updates are audited as
 `SET_ENV_ATTRIBUTE`. Delegated configuration privileges remain a later step.
-Window changes currently remain in enclave memory and reset on restart;
-adding the window to the administration branch's sealed state is still pending.
+Window updates are sealed together with administrative grants and deletion
+markers before success is returned. Startup restores the configured window from
+that same state file; a failed save stops the service.
 
 ## File layout
 
@@ -270,10 +271,12 @@ slot; a full 32-entry table rejects it without changing state.
 
 Successful operations use the same seal/write/fsync/rename/directory-fsync path as
 admin updates. Persistence failure returns ERROR and stops the service. The new
-version-2 sealed state includes deletion markers. Version-1 state is restored
-with its existing grants intact and no markers; the next mutation writes version
-2. Keep the same development signing key and compatible SGX sealing identity.
-Older binaries cannot read version 2; do not downgrade them onto updated state.
+version-3 sealed state includes the working-hours window, grants and deletion
+markers. Versions 1 and 2 restore their existing grants/markers and use the
+09:00–17:00 default window, because those files never contained a window. The
+next successful mutation writes version 3. Keep the same development signing key
+and compatible SGX sealing identity. Older binaries cannot read version 3; do not
+downgrade them onto updated state.
 The `--init` option is never a migration or recovery mechanism.
 
 `DROP ROLE` and `DROP USER` now BEGIN deletion before removing Cassandra role
@@ -426,9 +429,9 @@ mode the original scoped `ClientState.ensurePermission` check is used unchanged.
 General data-access authorization and ordinary permission GRANT/REVOKE are not
 changed by this hook.
 
-**Still deferred:** delegated environment-configuration privileges, sealing the
-working-hours window, and additional environmental settings. Working-hours CQL
-configuration is available as described above.
+**Still deferred:** delegated environment-configuration privileges and additional
+environmental settings. Working-hours CQL configuration is available as described
+above.
 Protected administrative grants now use the CQL commands above; the Java client
 remains a lower-level transport interface.
 
@@ -479,27 +482,30 @@ the existing ABAC statements, but a same-UID process can call the service direct
 checks Java-to-enclave operations, role encoding, capacity errors, fragmented and
 malformed requests, and strict response handling against controlled peers.
 
-## Sealed administrative state
+## Sealed protected state
 
 The service takes `SOCKET_PATH ENCLAVE_PATH STATE_FILE [--init]`. Like PATEE's
 reseal/load flow, it uses enclave ECALLs backed by `sgx_seal_data` and
 `sgx_unseal_data`; the service stores sealed bytes, not a plaintext table. The sealed payload
-contains a format version and the bounded administrative table. Working hours
-remain compiled constants and do not require mutable persisted configuration.
+contains a format version, the bounded administrative table (including deletion
+markers), and the configurable working-hours window, following PATEE's combined
+protected configuration.
 
 Unlike PATEE's automatic initialization on a missing file, `--init` explicitly
-creates a new empty state file and refuses an existing file. Normal startup
+creates a new state file with no grants and the default window, and refuses an
+existing file. Normal startup
 rejects missing, corrupted, truncated, symlinked, or incompatible state before
 opening the socket. The state file and socket need separate paths in owned
 private directories. State files are mode 0600. Keep runtime state outside Git.
 
-Successful grant/revoke operations seal the updated table, write an exclusively
-created `.tmp` file, sync it, atomically replace the state file, and sync its parent
+Successful grant/revoke, lifecycle and window updates seal the full state, write
+an exclusively created `.tmp` file, sync it, atomically replace the state file, and sync its parent
 directory before replying `OK`. A persistence failure rejects the request and
 stops the service so modified but unpersisted memory cannot drive later checks.
 The last acknowledged state survives a failure before replacement; a lost reply
-or failure after replacement can leave the mutation persisted. There is no retry
-or transaction protocol across Cassandra and the service.
+or failure after replacement can leave the mutation persisted. Requests are not
+automatically retried, and there is no general transaction protocol across
+Cassandra and the service.
 
 A `.lock` file is held with an exclusive process lock to prevent cooperating
 services from writing the same state concurrently. Locks are released on process
@@ -529,8 +535,8 @@ and the trusted database/service caller assumptions remain unchanged.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There is no sealed window persistence,
-enclave policy processing, or remote attestation in this
+binary protocol in the design draft. There is no enclave policy processing or
+remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
 Architecture reference: [PATEE's pinned implementation](https://github.com/harshit-jain52/postgres/tree/79d3f29576419d457c516bcda5d757d99f104b14/tee).

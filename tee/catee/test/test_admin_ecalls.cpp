@@ -80,6 +80,7 @@ int main(int argc, char **argv)
     assert(enclave_begin_role_delete(enclave, &result, alice) == SGX_SUCCESS && result == 0);
     expect_check(enclave, alice, UINT32_MAX, 0);
     assert(enclave_grant_admin_priv(enclave, &result, alice, 1) == SGX_SUCCESS && result != 0);
+    assert(enclave_set_timewindow(enclave, &result, 600, 660) == SGX_SUCCESS && result == 0);
     uint32_t sealed_size = 0;
     assert(enclave_get_sealed_size(enclave, &result, &sealed_size) == SGX_SUCCESS && result == 0);
     std::vector<uint8_t> sealed(sealed_size);
@@ -89,6 +90,9 @@ int main(int argc, char **argv)
     // Fresh state is empty until a valid sealed snapshot is restored.
     expect_check(enclave, longest, 1, 0);
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result == 0);
+    int within = -1, debug = -1;
+    assert(check_worktime(enclave, &result, 630, &within, &debug) == SGX_SUCCESS && result == 0 && within == 1 && debug == 1);
+    assert(check_worktime(enclave, &result, 840, &within, &debug) == SGX_SUCCESS && result == 0 && within == 0);
     expect_check(enclave, longest, 1, 1);
     expect_check(enclave, alice, UINT32_MAX, 0);
     assert(enclave_grant_admin_priv(enclave, &result, alice, 1) == SGX_SUCCESS && result != 0);
@@ -100,6 +104,8 @@ int main(int argc, char **argv)
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result != 0);
     expect_check(enclave, longest, 1, 1);
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size - 1) == SGX_SUCCESS && result != 0);
+    assert(check_worktime(enclave, &result, 630, &within, &debug) == SGX_SUCCESS && result == 0 && within == 1);
+    assert(check_worktime(enclave, &result, 840, &within, &debug) == SGX_SUCCESS && result == 0 && within == 0);
     assert(sgx_destroy_enclave(enclave) == SGX_SUCCESS);
     puts("Administrative ECALL hardware tests passed");
 }
