@@ -28,7 +28,8 @@ constexpr int LISTEN_BACKLOG = 16;
 enum RequestType
 {
     SGX_MSG_UNKNOWN,
-    SGX_MSG_CHECK_WORKTIME
+    SGX_MSG_CHECK_WORKTIME,
+    SGX_MSG_SET_TIMEWINDOW
 };
 
 sgx_enclave_id_t global_eid = 0;
@@ -230,8 +231,38 @@ int main(int argc, char **argv)
             }
             RequestType type = request.compare(0, 6, "CHECK ") == 0
                                ? SGX_MSG_CHECK_WORKTIME : SGX_MSG_UNKNOWN;
+            if (request.compare(0, 15, "SET_TIMEWINDOW ") == 0) type = SGX_MSG_SET_TIMEWINDOW;
             switch (type)
             {
+                case SGX_MSG_SET_TIMEWINDOW:
+                {
+                    int start_minute = 0, end_minute = 0;
+                    const char *end = request.data() + request.size();
+                    auto start = std::from_chars(request.data() + 15, end, start_minute);
+                    if (start.ec != std::errc() || start.ptr == end || *start.ptr != ' ')
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    auto finish = std::from_chars(start.ptr + 1, end, end_minute);
+                    if (finish.ec != std::errc() || finish.ptr != end)
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1;
+                    ret = enclave_set_timewindow(global_eid, &result, start_minute, end_minute);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0)
+                        reply(client_fd, "ERROR invalid_timewindow\n");
+                    else
+                        reply(client_fd, "OK HW DEBUG\n");
+                    break;
+                }
                 case SGX_MSG_CHECK_WORKTIME:
                 {
                     int minute = 0;

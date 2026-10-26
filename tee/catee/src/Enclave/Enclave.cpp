@@ -1,13 +1,21 @@
 #include "Enclave_t.h"
 #include "sgx_utils.h"
 
-// Development fixture: configuration and comparison both live in the enclave.
+// Configuration and comparison both live in the enclave.
 struct WorktimeWindow {
     int start_minute;
     int end_minute;
 };
 
-static constexpr WorktimeWindow worktime_window{9 * 60, 17 * 60};
+static WorktimeWindow worktime_window{9 * 60, 17 * 60};
+
+int enclave_set_timewindow(int start_minute, int end_minute)
+{
+    if (start_minute < 0 || start_minute >= end_minute || end_minute >= 1440)
+        return 1;
+    worktime_window = {start_minute, end_minute};
+    return 0;
+}
 
 int check_worktime(int minute, int *allowed, int *debug)
 {

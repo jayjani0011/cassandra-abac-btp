@@ -1,5 +1,6 @@
 enclave {
     trusted {
+        public int enclave_set_timewindow(int start_minute, int end_minute);
         public int check_worktime(int minute, [out] int *allowed, [out] int *debug);
     };
 };

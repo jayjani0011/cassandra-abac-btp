@@ -9,6 +9,13 @@ public final class CateeClientDriver
     {
         try
         {
+            if (args.length == 5 && args[1].equals("SET_TIMEWINDOW"))
+            {
+                CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[4]));
+                client.setTimeWindow(Integer.parseInt(args[2]), Integer.parseInt(args[3]));
+                System.out.println("OK HW DEBUG");
+                return;
+            }
             if (args.length != 3)
                 throw new IllegalArgumentException("Usage: SOCKET_PATH MINUTE TIMEOUT_MS");
             CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[2]));
