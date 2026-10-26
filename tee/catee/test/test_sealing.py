@@ -37,7 +37,7 @@ class SealingTest(unittest.TestCase):
             if process.poll() is not None:
                 self.fail("Service failed to start")
             try:
-                if exchange(self.path, [b"CHECK 840\n"]) == b"ALLOW HW DEBUG\n":
+                if exchange(self.path, [b"CHECK 840\n"]) in (b"ALLOW HW DEBUG\n", b"DENY HW DEBUG\n"):
                     return process
             except OSError:
                 time.sleep(0.05)
@@ -207,7 +207,7 @@ class SealingTest(unittest.TestCase):
                        check=True, capture_output=True, timeout=5)
 
     @staticmethod
-    def payload(version=2, entries=(), count=None):
+    def payload(version=3, entries=(), count=None, window=(540, 1020)):
         legacy = version == 1
         packed = bytearray(struct.pack("<I", version))
         for role, mask, pending in entries:
@@ -216,6 +216,8 @@ class SealingTest(unittest.TestCase):
                 packed.extend(struct.pack("<I", pending))
         packed.extend(bytes((32 - len(entries)) * (260 if legacy else 264)))
         packed.extend(struct.pack("<I", len(entries) if count is None else count))
+        if version >= 3:
+            packed.extend(struct.pack("<ii", *window))
         return bytes(packed)
 
     def test_version_one_migration_preserves_all_grants(self):
@@ -229,14 +231,79 @@ class SealingTest(unittest.TestCase):
                 self.assertEqual(expected, exchange(self.path, [f"CHECK_ADMIN_PRIV {role.hex()} {bit}\n".encode()]))
         self.assertEqual(original, self.state.read_bytes()) # Read-only restoration does not rewrite.
         self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN", "role0"))
-        self.assertGreater(self.state.stat().st_size, len(original)) # First mutation writes v2.
+        self.assertGreater(self.state.stat().st_size, len(original)) # First mutation writes v3.
         self.stop(process)
         self.start()
         self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 726f6c6530 1\n"]))
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 726f6c6531 2\n"]))
 
+    def test_version_two_preserves_grants_and_pending_markers_with_default_window(self):
+        self.seal_payload(self.payload(version=2, entries=[(b"alice", 0, 1), (b"bob", 3, 0)]))
+        original = self.state.read_bytes()
+        process = self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 0\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(original, self.state.read_bytes())
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 600 660\n"]))
+        self.assertGreater(self.state.stat().st_size, len(original))
+        self.stop(process)
+        self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 630\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+
+    def test_window_grants_and_deletion_markers_survive_crash_together(self):
+        process = self.start(True)
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 600 660\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 626f62 2\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("BEGIN"))
+        process.kill()
+        process.wait(timeout=3)
+        self.path.unlink()
+        process = self.start()
+        for minute in range(1440):
+            expected = b"ALLOW HW DEBUG\n" if 600 <= minute < 660 else b"DENY HW DEBUG\n"
+            self.assertEqual(expected, exchange(self.path, [f"CHECK {minute}\n".encode()]), minute)
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 2\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("FINISH"))
+        self.stop(process)
+        self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 630\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 2\n"]))
+
+    def test_failed_window_persistence_stops_service_and_restores_previous_window(self):
+        process = self.start(True)
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 600 660\n"]))
+        original = self.state.read_bytes()
+        pending = pathlib.Path(str(self.state) + ".tmp")
+        pending.write_text("preserve")
+        self.assertEqual(b"ERROR persistence_failure\n", exchange(self.path, [b"SET_TIMEWINDOW 720 780\n"]))
+        self.assertNotEqual(0, process.wait(timeout=3))
+        self.assertEqual(original, self.state.read_bytes())
+        self.assertEqual("preserve", pending.read_text())
+        pending.unlink()
+        self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 630\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 750\n"]))
+
+    def test_invalid_window_updates_do_not_reseal_or_modify_state(self):
+        self.start(True)
+        original = self.state.read_bytes()
+        for request in [b"SET_TIMEWINDOW 660 600\n", b"SET_TIMEWINDOW -1 600\n",
+                        b"SET_TIMEWINDOW 600 1440\n", b"SET_TIMEWINDOW 600 600\n",
+                        b"SET_TIMEWINDOW invalid 600\n"]:
+            self.assertTrue(exchange(self.path, [request]).startswith(b"ERROR "))
+            self.assertEqual(original, self.state.read_bytes())
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+
     def test_authenticated_invalid_payloads_rejected_without_reset(self):
-        cases = [self.payload(version=3), self.payload(count=33),
+        cases = [self.payload(version=4), self.payload(count=33),
                  self.payload(entries=[(b"alice", 1, 1)]),
                  self.payload(entries=[(b"alice", 0, 2)]),
                  self.payload(entries=[(b"", 0, 1)]),
@@ -245,9 +312,15 @@ class SealingTest(unittest.TestCase):
                  self.payload(version=1, count=33),
                  self.payload(version=1, entries=[(b"x" * 256, 1, 0)]),
                  self.payload(version=1, entries=[(b"alice", 1, 0), (b"alice", 2, 0)]),
+                 self.payload(version=2, count=33),
+                 self.payload(version=2, entries=[(b"alice", 1, 1)]),
+                 self.payload(version=2, entries=[(b"alice", 0, 2)]),
+                 self.payload(version=2, entries=[(b"alice", 0, 1), (b"alice", 0, 1)]),
                  self.payload(version=1)[:-1], b"short",
                  struct.pack("<I", 1) + self.payload()[4:],
                  struct.pack("<I", 2) + self.payload(version=1)[4:]]
+        cases += [self.payload(window=window) for window in
+                  [(-1, 660), (600, 600), (660, 600), (600, 1440), (0, -1), (0, 2147483647)]]
         for payload in cases:
             with self.subTest(size=len(payload), prefix=payload[:4]):
                 self.seal_payload(payload)

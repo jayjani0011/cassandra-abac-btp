@@ -400,7 +400,19 @@ int main(int argc, char **argv)
                     else if (result != 0)
                         reply(client_fd, "ERROR invalid_timewindow\n");
                     else
-                        reply(client_fd, "OK HW DEBUG\n");
+                    {
+                        try
+                        {
+                            reseal_admin();
+                            reply(client_fd, "OK HW DEBUG\n");
+                        }
+                        catch (const std::exception& error)
+                        {
+                            std::cerr << "State persistence failed: " << error.what() << '\n';
+                            reply(client_fd, "ERROR persistence_failure\n");
+                            healthy = false;
+                        }
+                    }
                     break;
                 }
                 case SGX_MSG_CHECK_WORKTIME:
