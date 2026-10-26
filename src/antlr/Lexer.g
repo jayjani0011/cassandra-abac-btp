@@ -169,6 +169,7 @@ K_DISABLE_POLICY:            D I S A B L E '_' P O L I C Y;
 K_ATTRIBUTE:   A T T R I B U T E;
 K_RULE:        R U L E;
 K_RESOURCE:    R E S O U R C E;
+K_ENV_ATTRIBUTE: E N V '_' A T T R I B U T E;
 K_ENVIRONMENT: E N V I R O N M E N T;
 K_EFFECT:      E F F E C T;
 K_FOR:         F O R;

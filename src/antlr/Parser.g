@@ -237,7 +237,8 @@ options {
 
 cqlStatement returns [CQLStatement.Raw stmt]
     @after{ if (stmt != null) stmt.setBindVariables(bindVariables); }
-    : catee=abacAdminPrivilegeStatement      { $stmt = catee; }
+    : env=setEnvironmentAttributeStatement { $stmt = env; }
+    | catee=abacAdminPrivilegeStatement      { $stmt = catee; }
     | st1= selectStatement                 { $stmt = st1; }
     | st2= insertStatement                 { $stmt = st2; }
     | st3= updateStatement                 { $stmt = st3; }
@@ -1750,6 +1751,13 @@ describeStatement returns [DescribeStatement stmt]
     ( K_WITH K_INTERNALS { $stmt.withInternalDetails(); } )?
     ;
 
+setEnvironmentAttributeStatement returns [SetEnvironmentAttributeStatement stmt]
+    : K_SET K_ENV_ATTRIBUTE attribute=noncol_ident '='
+      sh=INTEGER ',' sm=INTEGER ',' eh=INTEGER ',' em=INTEGER
+      { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(),
+                                                      new String[] { $sh.text, $sm.text, $eh.text, $em.text }); }
+    ;
+
 createAttributeStatement returns [CreateAttributeStatement.Raw stmt]
     @init {
         boolean ifNotExists = false;
@@ -2377,7 +2385,8 @@ unreserved_function_keyword returns [String str]
     ;
 
 basic_unreserved_keyword returns [String str]
-    : k=( K_ABAC_ADMIN
+    : k=( K_ENV_ATTRIBUTE
+        | K_ABAC_ADMIN
         | K_KEYS
         | K_AS
         | K_CLUSTER

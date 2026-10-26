@@ -139,6 +139,55 @@ public class CateeCqlTest extends CQLTester
         fail("Hardware service did not restart");
     }
 
+    private void checkWindowConfigurationThroughCql(boolean originalExpected) throws Throwable
+    {
+        useSuperUser();
+        CateeClient client = new CateeClient(socket, 2000);
+        executeNet("SET ENV_ATTRIBUTE worktime = 10, 0, 11, 0");
+        assertTrue(client.checkWorktime(600));
+        assertTrue(client.checkWorktime(659));
+        org.junit.Assert.assertFalse(client.checkWorktime(599));
+        org.junit.Assert.assertFalse(client.checkWorktime(660));
+        for (String values : new String[] {"-1,0,17,0", "24,0,17,0", "9,60,17,0", "9,0,17,60",
+                                           "9,0,9,0", "17,0,9,0", "2147483648,0,17,0"})
+        {
+            assertInvalidMessageNet(values.contains("2147483648") ? "valid integers" :
+                                    values.equals("9,0,9,0") || values.equals("17,0,9,0") ? "earlier than end" : "hour/minute",
+                                    "SET ENV_ATTRIBUTE worktime = " + values);
+            assertTrue(client.checkWorktime(630));
+            org.junit.Assert.assertFalse(client.checkWorktime(840));
+        }
+        assertInvalidMessageNet("Unsupported CATEE", "SET ENV_ATTRIBUTE workday = 9,0,17,0");
+        useUser("catee_reader", "test-password");
+        assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE worktime = 9,0,17,0");
+        assertTrue(client.checkWorktime(630));
+        org.junit.Assert.assertFalse(client.checkWorktime(840));
+
+        useSuperUser();
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("worktime", "false"), "catee_worktime");
+        // Choose a window far from the current clock so this rule grants access.
+        executeNet(LocalTime.now().getHour() < 12 ? "SET ENV_ATTRIBUTE worktime = 18,0,19,0"
+                                                : "SET ENV_ATTRIBUTE worktime = 1,0,2,0");
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE worktime = 0,0,23,59");
+        useUser("catee_reader", "test-password");
+        // The existing exclusive-end convention excludes the final minute of the day.
+        LocalTime now = LocalTime.now();
+        if (now.getHour() * 60 + now.getMinute() < 1439)
+            assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
+        else
+            assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE worktime = 9,0,17,0");
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+    }
+
     @Test
     public void cqlUsesEnclaveAndDoesNotReuseStalePermissions() throws Throwable
     {
@@ -221,6 +270,7 @@ public class CateeCqlTest extends CQLTester
                    "AND RESOURCE ATTRIBUTE {'catee_table': 'target'} AND ENVIRONMENT ATTRIBUTE {'worktime': '" + within + "'} WITH EFFECT (GRANT)");
         useUser("catee_reader", "test-password");
         assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        checkWindowConfigurationThroughCql(within);
         QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
                                        Map.of("worktime", Boolean.toString(!within)), "catee_worktime");
         assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
@@ -233,6 +283,8 @@ public class CateeCqlTest extends CQLTester
         service.destroy();
         assertTrue(service.waitFor(3, TimeUnit.SECONDS));
         assertInvalidMessageNet("Unable to complete CATEE authorization", "SELECT id FROM %s");
+        useSuperUser();
+        assertInvalidMessageNet("Required CATEE window update failed", "SET ENV_ATTRIBUTE worktime = 10,0,11,0");
         useUser("catee_admin", "test-password");
         assertInvalidMessageNet("Required CATEE administration check failed", "CREATE ATTRIBUTE catee_unavailable WITH TYPE text");
         useSuperUser();
