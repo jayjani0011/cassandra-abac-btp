@@ -52,6 +52,7 @@ def main():
         total = 0
         suites = [
             ("CateeAdministrationTest", None),
+            ("CateeEnvironmentConfigurationTest", None),
             ("CateeRoleLifecycleTest", None),
             ("CateeAuthorizerTest", "hardwareServiceDrivesPolicyAndFailureBlocksRbac"),
             ("CateeCqlTest", "cqlUsesEnclaveAndDoesNotReuseStalePermissions"),

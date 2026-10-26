@@ -192,7 +192,8 @@ python3 tee/catee/test/validate_correctness.py
 
 This command builds Cassandra's tests and the native prototype, runs the store,
 real-hardware ECALL, service, sealing, and Java-client suites, then runs the
-administration, role lifecycle, authorizer, network CQL, loader, and environment-provider tests.
+administration, environment configuration, role lifecycle, authorizer, network CQL,
+loader, and environment-provider tests.
 Hardware tests are explicitly enabled. Fresh JUnit reports must contain executed
 tests, no failures/errors/skips, and the required hardware test methods; old
 reports cannot satisfy a new run. Any failed step exits nonzero.
