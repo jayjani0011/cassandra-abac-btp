@@ -36,7 +36,8 @@ enum RequestType
     SGX_MSG_REVOKE_ADMIN_PRIV,
     SGX_MSG_CHECK_ADMIN_PRIV,
     SGX_MSG_BEGIN_ROLE_DELETE,
-    SGX_MSG_FINISH_ROLE_DELETE
+    SGX_MSG_FINISH_ROLE_DELETE,
+    SGX_MSG_SET_TIMEWINDOW
 };
 
 sgx_enclave_id_t global_eid = 0;
@@ -370,8 +371,38 @@ int main(int argc, char **argv)
             if (request.compare(0, 17, "CHECK_ADMIN_PRIV ") == 0) type = SGX_MSG_CHECK_ADMIN_PRIV;
             if (request.compare(0, 18, "BEGIN_ROLE_DELETE ") == 0) type = SGX_MSG_BEGIN_ROLE_DELETE;
             if (request.compare(0, 19, "FINISH_ROLE_DELETE ") == 0) type = SGX_MSG_FINISH_ROLE_DELETE;
+            if (request.compare(0, 15, "SET_TIMEWINDOW ") == 0) type = SGX_MSG_SET_TIMEWINDOW;
             switch (type)
             {
+                case SGX_MSG_SET_TIMEWINDOW:
+                {
+                    int start_minute = 0, end_minute = 0;
+                    const char *end = request.data() + request.size();
+                    auto start = std::from_chars(request.data() + 15, end, start_minute);
+                    if (start.ec != std::errc() || start.ptr == end || *start.ptr != ' ')
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    auto finish = std::from_chars(start.ptr + 1, end, end_minute);
+                    if (finish.ec != std::errc() || finish.ptr != end)
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1;
+                    ret = enclave_set_timewindow(global_eid, &result, start_minute, end_minute);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0)
+                        reply(client_fd, "ERROR invalid_timewindow\n");
+                    else
+                        reply(client_fd, "OK HW DEBUG\n");
+                    break;
+                }
                 case SGX_MSG_CHECK_WORKTIME:
                 {
                     int minute = 0;
