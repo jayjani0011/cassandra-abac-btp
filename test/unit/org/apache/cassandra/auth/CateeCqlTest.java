@@ -1,75 +1,24 @@
 package org.apache.cassandra.auth;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalTime;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.AfterClass;
-import org.junit.Assume;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.apache.cassandra.auth.catee.CateeClient;
 import org.apache.cassandra.auth.catee.CateeAdminPermission;
-import org.apache.cassandra.config.CassandraRelevantProperties;
 import org.apache.cassandra.config.DatabaseDescriptor;
-import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.QueryProcessor;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /** Opt-in network CQL check against the real hardware service. */
-public class CateeCqlTest extends CQLTester
+public class CateeCqlTest extends CateeCqlTestSupport
 {
-    private static Process service;
-    private static Path socket;
-    private static Path log;
-
-    @BeforeClass
-    public static void setupHardwareAndAuthentication() throws Exception
-    {
-        Assume.assumeTrue("true".equals(System.getProperty("catee.test.hardware")));
-        String configuredSocket = CassandraRelevantProperties.CATEE_SOCKET.getString();
-        if (configuredSocket == null)
-            throw new IllegalArgumentException("Pass cassandra.catee.socket in test.jvm.args before JVM startup");
-        socket = Path.of(configuredSocket);
-        Path root = Path.of("tee/catee").toAbsolutePath();
-        log = socket.resolveSibling("service.log");
-        service = new ProcessBuilder(root.resolve("build/catee-service").toString(), socket.toString(),
-                                     root.resolve("build/enclave.signed.so").toString(), socket.toString() + ".sealed", "--init")
-                  .redirectErrorStream(true).redirectOutput(log.toFile()).start();
-        CateeClient client = new CateeClient(socket, 2000);
-        boolean ready = false;
-        for (int i = 0; i < 100; ++i)
-        {
-            if (!service.isAlive()) fail("Hardware service failed to start");
-            try { client.checkWorktime(840); ready = true; break; }
-            catch (IOException e) { Thread.sleep(50); }
-        }
-        assertTrue("Hardware service did not become ready", ready);
-        CassandraRelevantProperties.ORG_APACHE_CASSANDRA_DISABLE_MBEAN_REGISTRATION.setBoolean(true);
-        requireAuthentication();
-        requireNetwork();
-    }
-
-    @AfterClass
-    public static void stopHardware() throws Exception
-    {
-        if (service != null && service.isAlive())
-        {
-            service.destroy();
-            if (!service.waitFor(3, TimeUnit.SECONDS)) { service.destroyForcibly(); service.waitFor(); }
-        }
-        if (socket != null) Files.deleteIfExists(socket);
-        if (socket != null) Files.deleteIfExists(Path.of(socket.toString() + ".sealed"));
-        if (socket != null) Files.deleteIfExists(Path.of(socket.toString() + ".sealed.lock"));
-        if (log != null) Files.deleteIfExists(log);
-    }
-
     private void checkRoleLifecycle() throws Throwable
     {
         CateeClient administration = new CateeClient(socket, 2000);
@@ -119,24 +68,6 @@ public class CateeCqlTest extends CQLTester
         executeNet("DROP USER lifecycle_absent");
         executeNet("DROP ATTRIBUTE lifecycle_before");
         executeNet("DROP ATTRIBUTE lifecycle_new_grant");
-    }
-
-    private static void restartService() throws Exception
-    {
-        service.destroy();
-        assertTrue(service.waitFor(3, TimeUnit.SECONDS));
-        Path root = Path.of("tee/catee").toAbsolutePath();
-        service = new ProcessBuilder(root.resolve("build/catee-service").toString(), socket.toString(),
-                                     root.resolve("build/enclave.signed.so").toString(), socket.toString() + ".sealed")
-                  .redirectErrorStream(true).redirectOutput(log.toFile()).start();
-        CateeClient client = new CateeClient(socket, 2000);
-        for (int i = 0; i < 100; ++i)
-        {
-            if (!service.isAlive()) fail("Hardware service failed to restart");
-            try { client.checkWorktime(840); return; }
-            catch (IOException e) { Thread.sleep(50); }
-        }
-        fail("Hardware service did not restart");
     }
 
     private void checkWindowConfigurationThroughCql(boolean originalExpected) throws Throwable

@@ -4,7 +4,7 @@ import pathlib
 import tempfile
 import unittest
 
-from validate_correctness import check_report
+from validate_correctness import check_report, check_python_report
 
 
 class ReportValidationTest(unittest.TestCase):
@@ -39,6 +39,12 @@ class ReportValidationTest(unittest.TestCase):
             check_report(self.report(), "Example", "missingHardwareTest")
         with self.assertRaises(FileNotFoundError):
             check_report(self.report().with_name("missing.xml"), "Example")
+
+    def test_python_results_require_every_suite_to_run_without_skips(self):
+        self.assertEqual(5, check_python_report("Ran 2 tests in 1s\nOK\nRan 3 tests in 1s\nOK"))
+        for text in ["", "Ran 0 tests", "Ran 2 tests\nRan 0 tests", "Ran 2 tests\nOK (skipped=1)"]:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                check_python_report(text)
 
 
 if __name__ == "__main__":

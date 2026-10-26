@@ -185,7 +185,8 @@ non-worktime authorizations uncached in that mode. Role metadata caches remain.
 
 ### Run all correctness checks
 
-From the repository root, with Java 11 and the SGX SDK environment available:
+From the repository root, with Java 11, the SGX SDK environment and the analysis
+requirements installed in `tee/catee/.local/analysis-venv` (see analysis setup below):
 
 ```bash
 python3 tee/catee/test/validate_correctness.py
@@ -193,8 +194,12 @@ python3 tee/catee/test/validate_correctness.py
 
 This command builds Cassandra's tests and the native prototype, runs the store,
 real-hardware ECALL, service, sealing, and Java-client suites, then runs the
-administration, environment configuration, role lifecycle, authorizer, network CQL,
-loader, and environment-provider tests.
+administration, environment configuration, role lifecycle, authorizer, sequential
+and concurrent network CQL, loader, environment-provider, role and audit tests.
+It also runs ASan/UBSan store checks, benchmark/analysis tests (including figure
+exports), and a tiny benchmark/analysis smoke run. All smoke output stays inside
+the new ignored validation directory; it is not performance evidence.
+See [test coverage and limits](test/README.md).
 Hardware tests are explicitly enabled. Fresh JUnit reports must contain executed
 tests, no failures/errors/skips, and the required hardware test methods; old
 reports cannot satisfy a new run. Any failed step exits nonzero.
@@ -206,7 +211,7 @@ or historical benchmark data is changed. Cassandra tests run sequentially becaus
 they share `build/test/cassandra`; do not run another Ant test job concurrently.
 The local enclave signing key is preserved. This validates the hardware debug
 prototype, not attestation or production enclave security. No performance sweeps
-are run by this command.
+are run by this command; only the explicitly labeled smoke fixture is generated.
 
 Focused checks from the repository root, after building the native service:
 

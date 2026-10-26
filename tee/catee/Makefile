@@ -64,6 +64,7 @@ $(BUILD)/enclave.signed.so: $(BUILD)/enclave.so src/Enclave/Enclave.config.xml $
 test: all test-admin test-admin-hw
 	python3 test/test_service.py
 	python3 test/test_sealing.py
+	python3 test/test_persistence_faults.py
 
 .PHONY: test-admin
 $(BUILD)/test-admin-privileges: test/test_admin_privileges.cpp src/Enclave/AdminPrivileges.h
@@ -145,3 +146,18 @@ $(BUILD)/fixture/seal-fixture: test/sealing_fixture/seal_fixture.cpp $(BUILD)/fi
 sealing-fixture: $(BUILD)/fixture/enclave.signed.so $(BUILD)/fixture/seal-fixture
 
 test: sealing-fixture
+
+# Fault injection is confined to test processes; never linked into the service.
+$(BUILD)/persistence-faults.so: test/persistence_faults.c
+	mkdir -p $(BUILD)
+	$(CC) -shared -fPIC -Wall -Wextra -Werror $< -ldl -o $@
+
+.PHONY: persistence-faults test-admin-sanitized
+persistence-faults: $(BUILD)/persistence-faults.so
+
+test-admin-sanitized:
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++11 -g -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Isrc/Enclave test/test_admin_privileges.cpp -o $(BUILD)/test-admin-sanitized
+	./$(BUILD)/test-admin-sanitized
+
+test: persistence-faults

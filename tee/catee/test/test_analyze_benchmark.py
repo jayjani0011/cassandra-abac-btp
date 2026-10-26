@@ -5,6 +5,8 @@ import json
 import math
 import pathlib
 import tempfile
+import subprocess
+import sys
 import unittest
 
 from analyze_benchmark import analyze, sample_statistics
@@ -86,6 +88,36 @@ class AnalysisTest(unittest.TestCase):
         _, _, _, points, comparisons = analyze(self.path, allow_smoke=True)
         self.assertTrue(all(row["repetition_mean_sd_ns"] is None for row in points))
         self.assertTrue(all(row["overhead_sd_percent"] is None for row in comparisons))
+
+    def test_cli_exports_figures_and_refuses_overwrite(self):
+        output = self.path / "analysis-output"
+        command = [sys.executable, str(pathlib.Path(__file__).with_name("analyze_benchmark.py")),
+                   str(self.path), str(output), "--allow-smoke"]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+        report = json.loads((output / "analysis.json").read_text())
+        self.assertEqual("complete", report["status"])
+        self.assertEqual("smoke", report["kind"])
+        for figure in ["latency", "overhead"]:
+            self.assertTrue((output / (figure + ".png")).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"))
+            self.assertIn("SMOKE", (output / (figure + ".svg")).read_text())
+        for name in ["batch_summary.csv", "repeat_summary.csv", "point_summary.csv", "comparison.csv"]:
+            self.assertGreater(len((output / name).read_text().splitlines()), 1)
+        original = {path.name: path.read_bytes() for path in output.iterdir()}
+        self.assertNotEqual(0, subprocess.run(command, capture_output=True, timeout=30).returncode)
+        self.assertEqual(original, {path.name: path.read_bytes() for path in output.iterdir()})
+
+    def test_cli_refuses_historical_output(self):
+        from validate_correctness import ROOT
+        # Use the existing directory: even a missing guard must not create a
+        # test directory inside historical results before the assertion fails.
+        output = ROOT / "benchmarks/abac-experiments"
+        self.assertTrue(output.is_dir())
+        result = subprocess.run([sys.executable, str(pathlib.Path(__file__).with_name("analyze_benchmark.py")),
+                                 str(self.path), str(output), "--allow-smoke"], capture_output=True, timeout=30)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(b"Historical ABAC results cannot be an analysis output", result.stderr)
+        self.assertTrue(output.is_dir())
 
 
 if __name__ == "__main__":
