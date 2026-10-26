@@ -71,6 +71,44 @@ class HardwareServiceTest(unittest.TestCase):
             with self.subTest(time=clock):
                 self.assertEqual(expected, check_time(str(self.path), clock))
 
+    def test_configurable_windows_match_all_minutes(self):
+        try:
+            for start, end in [(600, 660), (0, 1), (1438, 1439), (0, 1439)]:
+                self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_TIMEWINDOW {start} {end}\n".encode()]))
+                for minute in range(1440):
+                    expected = b"ALLOW HW DEBUG\n" if start <= minute < end else b"DENY HW DEBUG\n"
+                    self.assertEqual(expected, exchange(self.path, [f"CHECK {minute}\n".encode()]),
+                                     (start, end, minute))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
+    def test_rejected_window_updates_preserve_configuration(self):
+        try:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 600 660\n"]))
+            for start, end in [(-1, 60), (60, 60), (61, 60), (1440, 1450), (600, 1440),
+                               (-2147483648, 2147483647), (0, -1)]:
+                self.assertEqual(b"ERROR invalid_timewindow\n",
+                                 exchange(self.path, [f"SET_TIMEWINDOW {start} {end}\n".encode()]))
+            for request in [b"SET_TIMEWINDOW\n", b"SET_TIMEWINDOW \n", b"SET_TIMEWINDOW 600\n",
+                            b"SET_TIMEWINDOW 600 660 extra\n", b"SET_TIMEWINDOW nope 660\n",
+                            b"SET_TIMEWINDOW 600 660 \n", b"SET_TIMEWINDOW  600 660\n",
+                            b"SET_TIMEWINDOW 600  660\n", b"SET_TIMEWINDOW +600 660\n",
+                            b"SET_TIMEWINDOW 600 660.0\n", b"SET_TIMEWINDOW 600 2147483648\n",
+                            b"SET_TIMEWINDOW -2147483649 660\n", b"SET_TIMEWINDOW 600 66\x000\n"]:
+                self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]), request)
+            self.assertTrue(check_time(str(self.path), "10:30"))
+            self.assertFalse(check_time(str(self.path), "14:00"))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
+    def test_fragmented_window_update(self):
+        try:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIME", b"WINDOW 720", b" 780\n"]))
+            self.assertTrue(check_time(str(self.path), "12:00"))
+            self.assertFalse(check_time(str(self.path), "13:00"))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
     def test_enclave_rejects_out_of_range_minutes(self):
         for minute in [-1, 1440]:
             with self.subTest(minute=minute):

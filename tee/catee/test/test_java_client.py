@@ -32,6 +32,13 @@ def java_lifecycle(path, operation, role="alice", timeout=2000):
                           capture_output=True, text=True, timeout=5)
 
 
+def java_set_window(path, start=600, end=660, timeout=500):
+    return subprocess.run(["java", "-cp", f"{ROOT}/build/java:{ROOT}/build/java-deps/*",
+                           "org.apache.cassandra.auth.catee.CateeClientDriver",
+                           str(path), "SET_TIMEWINDOW", str(start), str(end), str(timeout)],
+                          capture_output=True, text=True, timeout=5)
+
+
 class JavaHardwareTest(HardwareBase):
     def test_java_admin_operations(self):
         for role in ["alice", "Research team जय", "a" * 255]:
@@ -93,6 +100,21 @@ class JavaHardwareTest(HardwareBase):
         self.assertEqual("DENY HW DEBUG\n", java_admin(self.path, "CHECK", failed_role).stdout)
         self.assertEqual(0, java_admin(self.path, "GRANT", "capacity0", 2).returncode)
 
+    def test_java_configures_worktime_window(self):
+        try:
+            result = java_set_window(self.path, timeout=2000)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("OK HW DEBUG\n", result.stdout)
+            for minute, expected in [(599, "DENY"), (600, "ALLOW"), (659, "ALLOW"), (660, "DENY"), (840, "DENY")]:
+                result = java_client(self.path, minute, 2000)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertEqual(f"{expected} HW DEBUG\n", result.stdout)
+            for start, end in [(-1, 60), (60, 60), (61, 60), (600, 1440)]:
+                self.assertNotEqual(0, java_set_window(self.path, start, end).returncode)
+            self.assertEqual("ALLOW HW DEBUG\n", java_client(self.path, 630, 2000).stdout)
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
     def test_java_worktime_boundaries(self):
         for minute, expected in [(0, "DENY"), (539, "DENY"), (540, "ALLOW"),
                                  (840, "ALLOW"), (1019, "ALLOW"), (1020, "DENY"),
@@ -131,6 +153,15 @@ class JavaFailureTest(unittest.TestCase):
                 self.assertEqual("", result.stdout)
             self.assertNotEqual(0, java_client("relative.sock").returncode)
 
+    def test_window_update_absent_service_and_invalid_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "absent.sock"
+            for start, end, timeout in [(600, 660, 500), (-1, 60, 500), (60, 60, 500),
+                                        (61, 60, 500), (600, 1440, 500), (600, 660, 0)]:
+                result = java_set_window(path, start, end, timeout)
+                self.assertNotEqual(0, result.returncode)
+                self.assertEqual("", result.stdout)
+
     def test_response_validation_and_deadline(self):
         cases = [(b"ALLOW HW DEBUG\n", 0), (b"DENY HW DEBUG\n", 0),
                                    (b"ERROR enclave_failure\n", 1), (b"ALLOW\n", 1),
@@ -146,6 +177,10 @@ class JavaFailureTest(unittest.TestCase):
                   for response, expected in [(b"OK HW DEBUG\n", 0), (b"ALLOW HW DEBUG\n", 1),
                                              (b"DENY HW DEBUG\n", 1), (b"ERROR persistence_failure\n", 1),
                                              (b"OK HW DEBUG", 1), (b"x" * 65, 1), (None, 1)]]
+        cases += [("SET_TIMEWINDOW", response, expected) for response, expected in [
+            (b"OK HW DEBUG\n", 0), (b"ALLOW HW DEBUG\n", 1), (b"DENY HW DEBUG\n", 1),
+            (b"ERROR invalid_timewindow\n", 1), (b"OK\n", 1), (b"OK HW DEBUG", 1),
+            (b"\xff\n", 1), (b"x" * 65, 1), (None, 1), ("drip", 1)]]
         for operation, response, expected in cases:
             with self.subTest(operation=operation, response=response), tempfile.TemporaryDirectory() as directory:
                 path = pathlib.Path(directory) / "mock.sock"
@@ -169,6 +204,8 @@ class JavaFailureTest(unittest.TestCase):
                                                     if operation else b"CHECK 840\n")
                                 if operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]:
                                     expected_request = f"{operation} 616c696365\n".encode()
+                                if operation == "SET_TIMEWINDOW":
+                                    expected_request = b"SET_TIMEWINDOW 600 660\n"
                                 if request != expected_request:
                                     raise RuntimeError("Incorrect Java request")
                                 if response is None:
@@ -188,7 +225,9 @@ class JavaFailureTest(unittest.TestCase):
                     worker = threading.Thread(target=serve)
                     worker.start()
                     try:
-                        if operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]:
+                        if operation == "SET_TIMEWINDOW":
+                            result = java_set_window(path, timeout=500)
+                        elif operation in ["BEGIN_ROLE_DELETE", "FINISH_ROLE_DELETE"]:
                             result = java_lifecycle(path, operation, timeout=500)
                         else:
                             result = java_admin(path, operation, timeout=500) if operation else java_client(path)

@@ -6,10 +6,26 @@ This small prototype follows PATEE's process layout:
 Python test client -> local Unix socket -> native service -> ECALL -> SGX enclave
 ```
 
-The enclave contains a **fixed development fixture**, 09:00 inclusive to 17:00
-exclusive. Both the configuration and comparison live inside the enclave. The
+The enclave window defaults to 09:00 inclusive to 17:00 exclusive and can be
+updated through the native service. Both the configuration and comparison live inside the enclave. The
 client supplies a time; this is not a trusted clock or a complete authorization
 decision. Cassandra can opt into this service for policies requiring `worktime`.
+
+## Working-hours configuration transport
+
+Like PATEE's `enclave_set_timewindow`, the enclave accepts start/end minutes.
+`CateeClient.setTimeWindow(startMinute, endMinute)` sends:
+
+```text
+SET_TIMEWINDOW <startMinute> <endMinute>\n
+```
+
+The window must satisfy `0 <= start < end < 1440`; invalid updates leave it
+unchanged. The response must be exactly `OK HW DEBUG`. Checks continue to use
+start-inclusive, end-exclusive boundaries. This transport trusts the permitted
+OS UID. The CQL administration command is the next change.
+Window changes currently remain in enclave memory and reset on restart;
+adding the window to the administration branch's sealed state is still pending.
 
 ## File layout
 
@@ -131,7 +147,7 @@ Run the native service under the same OS user, supplying its state file as shown
 above. Settings are captured when
 `CassandraAuthorizer` is constructed. The socket path must be absolute and the
 timeout must be 1–60000 milliseconds. These are connection settings, not policy
-configuration; the enclave window remains fixed at 09:00–17:00.
+configuration; the enclave window defaults to 09:00–17:00.
 
 Use the exact environment condition `{'worktime': 'true'}` (or `'false'`) in an
 ABAC rule. This uses the existing CREATE RULE syntax and `system_auth.abac_rules`
@@ -485,7 +501,7 @@ and the trusted database/service caller assumptions remain unchanged.
 ## Deliberately small scope
 
 - One request per connection: ASCII `CHECK <minute>\n` (minute 0–1439), or an
-  administrative operation above.
+  administrative operation above, or `SET_TIMEWINDOW <startMinute> <endMinute>\n`.
 - Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, `OK HW DEBUG\n`, or `ERROR <reason>\n`.
 - Requests are limited to 544 bytes including the newline, with a one-second
   request deadline. Inputs outside the minute range are rejected inside SGX.
