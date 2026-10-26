@@ -41,6 +41,7 @@ public enum AuditLogEntryType
     DROP_INDEX(AuditLogEntryCategory.DDL),
     GRANT(AuditLogEntryCategory.DCL),
     REVOKE(AuditLogEntryCategory.DCL),
+    SET_ENV_ATTRIBUTE(AuditLogEntryCategory.DCL),
     CREATE_TYPE(AuditLogEntryCategory.DDL),
     DROP_AGGREGATE(AuditLogEntryCategory.DDL),
     ALTER_VIEW(AuditLogEntryCategory.DDL),

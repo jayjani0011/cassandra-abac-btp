@@ -99,6 +99,13 @@ public class CassandraAuthorizer implements IAuthorizer
         return cateeClient.checkWorktime(now.getHour() * 60 + now.getMinute());
     }
 
+    public void setCateeTimeWindow(int startMinute, int endMinute) throws IOException
+    {
+        if (!isCateeEnabled())
+            throw new InvalidRequestException("CATEE is not enabled");
+        cateeClient.setTimeWindow(startMinute, endMinute);
+    }
+
     // Returns every permission on the resource granted to the user either directly
     // or indirectly via roles granted to the user.
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)

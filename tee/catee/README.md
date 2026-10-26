@@ -11,7 +11,7 @@ updated through the native service. Both the configuration and comparison live i
 client supplies a time; this is not a trusted clock or a complete authorization
 decision. Cassandra can opt into this service for policies requiring `worktime`.
 
-## Working-hours configuration transport
+## Working-hours configuration
 
 Like PATEE's `enclave_set_timewindow`, the enclave accepts start/end minutes.
 `CateeClient.setTimeWindow(startMinute, endMinute)` sends:
@@ -23,7 +23,18 @@ SET_TIMEWINDOW <startMinute> <endMinute>\n
 The window must satisfy `0 <= start < end < 1440`; invalid updates leave it
 unchanged. The response must be exactly `OK HW DEBUG`. Checks continue to use
 start-inclusive, end-exclusive boundaries. This transport trusts the permitted
-OS UID. The CQL administration command is the next change.
+OS UID. Cassandra superusers can configure the same window through CQL:
+
+```cql
+SET ENV_ATTRIBUTE worktime = 9, 0, 17, 0;
+```
+
+The values are start hour, start minute, end hour, end minute. Hours must be 0–23,
+minutes 0–59, and start must precede end; overnight windows are unsupported.
+The window is node-local and applies to every CATEE worktime condition.
+CATEE must be enabled. Invalid updates, unsupported attributes, non-superusers,
+and required service failures reject the command. Updates are audited as
+`SET_ENV_ATTRIBUTE`. Delegated configuration privileges remain a later step.
 Window changes currently remain in enclave memory and reset on restart;
 adding the window to the administration branch's sealed state is still pending.
 
@@ -172,6 +183,7 @@ Focused checks from the repository root, after building the native service:
 
 ```bash
 ant build-test
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeEnvironmentConfigurationTest
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAuthorizerTest -Dtest.jvm.args=-Dcatee.test.hardware=true
 catee_cql_dir=$(mktemp -d /tmp/catee-cql.XXXXXX)
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeCqlTest -Dtest.jvm.args="-Dcatee.test.hardware=true -Dcassandra.catee.socket=$catee_cql_dir/catee.sock"
@@ -200,7 +212,7 @@ isolated under the test build directory; historical benchmarks are not rerun.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There is no CQL configuration interface, sealing,
+binary protocol in the design draft. There is no sealed window persistence,
 enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
