@@ -160,6 +160,7 @@ Focused checks from the repository root, after building the native service:
 ```bash
 ant build-test
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAdministrationTest
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeRoleLifecycleTest
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAuthorizerTest -Dtest.jvm.args=-Dcatee.test.hardware=true
 catee_cql_dir=$(mktemp -d /tmp/catee-cql.XXXXXX)
 ant testsome -Dtest.name=org.apache.cassandra.auth.CateeCqlTest -Dtest.jvm.args="-Dcatee.test.hardware=true -Dcassandra.catee.socket=$catee_cql_dir/catee.sock"
@@ -192,10 +193,10 @@ requests when CATEE is disabled or the service update fails; success follows
 sealed-state persistence. Existing native ABAC commands retain their behavior.
 The new grammar does not configure working hours.
 
-Role deletion cleanup and concurrent role lifecycle coordination are not included
-yet. Dropping and recreating a name can still reuse a stale protected grant.
-The native socket continues to trust the permitted OS UID; these CQL checks do
-not authenticate direct socket callers.
+In CATEE mode, role creation, alteration, deletion and protected provisioning
+share a single node-local lifecycle lock. Target checks are repeated under that
+lock. The native socket continues to trust the permitted OS UID; these CQL checks
+do not authenticate direct socket callers.
 
 ## Protected role-deletion operations
 
@@ -222,13 +223,39 @@ with its existing grants intact and no markers; the next mutation writes version
 Older binaries cannot read version 2; do not downgrade them onto updated state.
 The `--init` option is never a migration or recovery mechanism.
 
-**Not connected to DROP ROLE/DROP USER yet:** these operations provide the enclave
-support for the next commit. Cassandra-side ordering, locking, recreation and
-retry/recovery handling remain pending. The service does not verify whether a
-Cassandra role was actually deleted; it still trusts its permitted OS caller.
-A restart restores durable markers but does not finish Cassandra deletion.
-SIGKILL can leave a stale socket that must be removed after verifying the service
-has stopped. Sealing still does not prevent replay of an older valid snapshot.
+`DROP ROLE` and `DROP USER` now BEGIN deletion before removing Cassandra role
+metadata and ordinary permissions, then FINISH only after cleanup returns.
+Role-permission cleanup errors propagate in this CATEE path instead of being
+logged and ignored. Required service failures reject deletion, including for
+superusers. After a partial failure, retry with an authorized administrator:
+
+```cql
+DROP ROLE IF EXISTS alice;
+```
+
+The retry performs cleanup even when the role row is already absent. After BEGIN,
+a failure leaves the sealed marker blocking protected grants/checks. A missing
+role created through CREATE ROLE/CREATE USER first completes the same cleanup;
+its new identity starts without the old protected grants. CREATE IF NOT EXISTS
+on an existing role leaves its grants intact. A failed preparation prevents
+creation. New role creation and even DROP IF EXISTS on an absent role require the
+SGX service in CATEE mode; an exhausted marker table rejects preparation safely.
+Native mode keeps its existing role-management behavior.
+
+This coordination covers supported single-node CQL paths, not raw system_auth
+writes, direct role-manager calls or another Cassandra node. Existing sessions
+are not disconnected: following Cassandra behavior, they can receive explicit
+new grants to a recreated name. In-flight operations authorized before deletion
+are not cancelled. Superuser bypass and ordinary authentication/role caches remain
+unchanged. Ordinary ABAC user-attribute assignments are not removed by the existing
+role-deletion path; cleaning those is a separate unresolved issue, not a guarantee
+of this protected-administration lifecycle change.
+
+A restart restores durable markers but does not automatically finish Cassandra
+deletion. The native service trusts its permitted OS caller to request FINISH
+only after cleanup. SIGKILL can leave a stale socket that must be removed after
+verifying the service has stopped. Sealing still does not prevent replay of an
+older valid snapshot.
 
 Tests use a separate fixture enclave under `test/sealing_fixture`, signed with the
 local development key, to generate real version-1 state and authenticated invalid

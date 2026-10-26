@@ -112,6 +112,16 @@ public class CassandraAuthorizer implements IAuthorizer
             cateeClient.revokeAdminPrivilege(role, mask);
     }
 
+    void beginCateeRoleDeletion(String role) throws IOException
+    {
+        cateeClient.beginRoleDeletion(role);
+    }
+
+    void finishCateeRoleDeletion(String role) throws IOException
+    {
+        cateeClient.finishRoleDeletion(role);
+    }
+
     // Returns every permission on the resource granted to the user either directly
     // or indirectly via roles granted to the user.
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)
@@ -382,6 +392,7 @@ public class CassandraAuthorizer implements IAuthorizer
         }
         catch (RequestExecutionException | RequestValidationException e)
         {
+            if (isCateeEnabled()) throw e;
             logger.warn(String.format("CassandraAuthorizer failed to revoke all permissions of %s", revokee.getRoleName()), e);
         }
     }
@@ -420,6 +431,7 @@ public class CassandraAuthorizer implements IAuthorizer
         }
         catch (RequestExecutionException | RequestValidationException e)
         {
+            if (isCateeEnabled() && droppedResource instanceof RoleResource) throw e;
             logger.warn(String.format("CassandraAuthorizer failed to revoke all permissions on %s", droppedResource), e);
         }
     }

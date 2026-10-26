@@ -2,6 +2,7 @@ package org.apache.cassandra.auth;
 
 import java.io.IOException;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.apache.cassandra.auth.catee.CateeAdminPermission;
 import org.apache.cassandra.config.DatabaseDescriptor;
@@ -14,6 +15,47 @@ public final class CateeAdministration
 {
     private CateeAdministration() { }
 
+    // Single-node coordination for supported CQL role mutations and provisioning.
+    private static final Object ROLE_LIFECYCLE_LOCK = new Object();
+
+    public static boolean isEnabled()
+    {
+        IAuthorizer authorizer = DatabaseDescriptor.getAuthorizer();
+        return authorizer instanceof CassandraAuthorizer && ((CassandraAuthorizer) authorizer).isCateeEnabled();
+    }
+
+    public static <T> T withRoleLifecycle(Supplier<T> operation)
+    {
+        if (!isEnabled()) return operation.get();
+        synchronized (ROLE_LIFECYCLE_LOCK)
+        {
+            return operation.get();
+        }
+    }
+
+    // Caller holds the lifecycle lock and has rechecked CQL authorization/state.
+    // Also used before creating an absent role, to complete interrupted cleanup.
+    public static void deleteRole(ClientState state, RoleResource role)
+    {
+        CassandraAuthorizer authorizer = (CassandraAuthorizer) DatabaseDescriptor.getAuthorizer();
+        try { authorizer.beginCateeRoleDeletion(role.getRoleName()); }
+        catch (IOException | RuntimeException | LinkageError e)
+        {
+            throw new InvalidRequestException("Cannot begin CATEE role deletion: " + e.getMessage());
+        }
+        // Do not clear the durable marker unless every cleanup step returns.
+        DatabaseDescriptor.getRoleManager().dropRole(state.getUser(), role);
+        authorizer.revokeAllFrom(role);
+        authorizer.revokeAllOn(role);
+        DatabaseDescriptor.getNetworkAuthorizer().drop(role);
+        DatabaseDescriptor.getCIDRAuthorizer().dropCidrPermissionsForRole(role);
+        try { authorizer.finishCateeRoleDeletion(role.getRoleName()); }
+        catch (IOException | RuntimeException | LinkageError e)
+        {
+            throw new InvalidRequestException("Cannot finish CATEE role deletion; retry DROP ROLE IF EXISTS: " + e.getMessage());
+        }
+    }
+
     public static void ensureSuperuser(ClientState state)
     {
         state.ensureNotAnonymous();
@@ -22,6 +64,14 @@ public final class CateeAdministration
     }
 
     public static void modifyPrivileges(ClientState state, RoleResource role, Set<Permission> operations, boolean grant)
+    {
+        withRoleLifecycle(() -> {
+            modifyPrivilegesLocked(state, role, operations, grant);
+            return null;
+        });
+    }
+
+    private static void modifyPrivilegesLocked(ClientState state, RoleResource role, Set<Permission> operations, boolean grant)
     {
         ensureSuperuser(state);
         IAuthorizer configured = DatabaseDescriptor.getAuthorizer();

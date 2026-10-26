@@ -15,6 +15,7 @@ import org.junit.Test;
 import org.apache.cassandra.auth.catee.CateeClient;
 import org.apache.cassandra.auth.catee.CateeAdminPermission;
 import org.apache.cassandra.config.CassandraRelevantProperties;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.QueryProcessor;
 
@@ -69,10 +70,80 @@ public class CateeCqlTest extends CQLTester
         if (log != null) Files.deleteIfExists(log);
     }
 
+    private void checkRoleLifecycle() throws Throwable
+    {
+        CateeClient administration = new CateeClient(socket, 2000);
+        int privilege = CateeAdminPermission.mask(Permission.CREATE_ATTRIBUTE);
+        executeNet("CREATE USER lifecycle_user WITH PASSWORD 'test-password'");
+        executeNet("GRANT ABAC_ADMIN { CREATE_ATTRIBUTE } TO lifecycle_user");
+        useUser("lifecycle_user", "test-password");
+        com.datastax.driver.core.Session existingSession = sessionNet();
+        existingSession.execute("CREATE ATTRIBUTE lifecycle_before WITH TYPE text");
+        useSuperUser();
+        executeNet("DROP USER lifecycle_user");
+        org.junit.Assert.assertFalse(administration.checkAdminPrivilege("lifecycle_user", privilege));
+        try { existingSession.execute("CREATE ATTRIBUTE lifecycle_dropped WITH TYPE text"); fail("Dropped role retained privilege"); }
+        catch (com.datastax.driver.core.exceptions.UnauthorizedException expected) { }
+        executeNet("CREATE ROLE lifecycle_user WITH LOGIN=true AND PASSWORD='test-password'");
+        org.junit.Assert.assertFalse(administration.checkAdminPrivilege("lifecycle_user", privilege));
+        try { existingSession.execute("CREATE ATTRIBUTE lifecycle_recreated WITH TYPE text"); fail("Recreated role inherited old privilege"); }
+        catch (com.datastax.driver.core.exceptions.UnauthorizedException expected) { }
+        executeNet("GRANT ABAC_ADMIN { CREATE_ATTRIBUTE } TO lifecycle_user");
+        executeNet("CREATE ROLE IF NOT EXISTS lifecycle_user");
+        assertTrue(administration.checkAdminPrivilege("lifecycle_user", privilege));
+        existingSession.execute("CREATE ATTRIBUTE lifecycle_new_grant WITH TYPE text");
+        executeNet("DROP ROLE lifecycle_user");
+        executeNet("DROP USER IF EXISTS lifecycle_user");
+
+        // Emulate restart after BEGIN: the marker must survive service restoration.
+        executeNet("CREATE ROLE lifecycle_interrupted WITH LOGIN=true AND PASSWORD='test-password'");
+        executeNet("GRANT ABAC_ADMIN { CREATE_ATTRIBUTE } TO lifecycle_interrupted");
+        administration.beginRoleDeletion("lifecycle_interrupted");
+        restartService();
+        assertInvalidMessageNet("Required CATEE grant update failed",
+                                "GRANT ABAC_ADMIN { CREATE_ATTRIBUTE } TO lifecycle_interrupted");
+        executeNet("DROP ROLE IF EXISTS lifecycle_interrupted");
+        executeNet("CREATE USER lifecycle_interrupted WITH PASSWORD 'test-password'");
+        org.junit.Assert.assertFalse(administration.checkAdminPrivilege("lifecycle_interrupted", privilege));
+        executeNet("DROP ROLE lifecycle_interrupted");
+
+        // Recover after the Cassandra role row disappeared but FINISH was not done.
+        administration.beginRoleDeletion("lifecycle_absent");
+        restartService();
+        executeNet("DROP ROLE IF EXISTS lifecycle_absent");
+        administration.grantAdminPrivilege("lifecycle_absent", privilege);
+        assertTrue(administration.checkAdminPrivilege("lifecycle_absent", privilege));
+        // Creating an absent name also removes stale state, without restoring grants.
+        executeNet("CREATE USER lifecycle_absent WITH PASSWORD 'test-password'");
+        org.junit.Assert.assertFalse(administration.checkAdminPrivilege("lifecycle_absent", privilege));
+        executeNet("DROP USER lifecycle_absent");
+        executeNet("DROP ATTRIBUTE lifecycle_before");
+        executeNet("DROP ATTRIBUTE lifecycle_new_grant");
+    }
+
+    private static void restartService() throws Exception
+    {
+        service.destroy();
+        assertTrue(service.waitFor(3, TimeUnit.SECONDS));
+        Path root = Path.of("tee/catee").toAbsolutePath();
+        service = new ProcessBuilder(root.resolve("build/catee-service").toString(), socket.toString(),
+                                     root.resolve("build/enclave.signed.so").toString(), socket.toString() + ".sealed")
+                  .redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        CateeClient client = new CateeClient(socket, 2000);
+        for (int i = 0; i < 100; ++i)
+        {
+            if (!service.isAlive()) fail("Hardware service failed to restart");
+            try { client.checkWorktime(840); return; }
+            catch (IOException e) { Thread.sleep(50); }
+        }
+        fail("Hardware service did not restart");
+    }
+
     @Test
     public void cqlUsesEnclaveAndDoesNotReuseStalePermissions() throws Throwable
     {
         useSuperUser();
+        checkRoleLifecycle();
         executeNet("CREATE ROLE catee_admin WITH login=true AND password='test-password'");
         executeNet("CREATE ROLE catee_target WITH login=true AND password='test-password'");
         executeNet("CREATE ROLE catee_parent WITH login=false");
@@ -166,6 +237,10 @@ public class CateeCqlTest extends CQLTester
         assertInvalidMessageNet("Required CATEE administration check failed", "CREATE ATTRIBUTE catee_unavailable WITH TYPE text");
         useSuperUser();
         assertInvalidMessageNet("Required CATEE grant update failed", "GRANT ABAC_ADMIN { CREATE_POLICY } TO catee_admin");
+        assertInvalidMessageNet("Cannot begin CATEE role deletion", "DROP ROLE catee_target");
+        assertTrue(DatabaseDescriptor.getRoleManager().isExistingRole(RoleResource.role("catee_target")));
+        assertInvalidMessageNet("Cannot begin CATEE role deletion", "CREATE ROLE catee_service_down WITH LOGIN=true");
+        org.junit.Assert.assertFalse(DatabaseDescriptor.getRoleManager().isExistingRole(RoleResource.role("catee_service_down")));
         executeNet("CREATE ATTRIBUTE catee_superuser WITH TYPE text");
         executeNet("DROP ATTRIBUTE catee_superuser");
         useUser("catee_reader", "test-password");

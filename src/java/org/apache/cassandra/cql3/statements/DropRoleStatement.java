@@ -66,6 +66,25 @@ public class DropRoleStatement extends AuthenticationStatement
 
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
     {
+        return CateeAdministration.withRoleLifecycle(() -> {
+            if (CateeAdministration.isEnabled())
+            {
+                validate(state);
+                authorize(state);
+            }
+            return executeRoleChange(state);
+        });
+    }
+
+    private ResultMessage executeRoleChange(ClientState state) throws RequestValidationException, RequestExecutionException
+    {
+        if (CateeAdministration.isEnabled())
+        {
+            // IF EXISTS must still recover cleanup after the role row was deleted.
+            CateeAdministration.deleteRole(state, role);
+            return null;
+        }
+
         // not rejected in validate()
         if (ifExists && !DatabaseDescriptor.getRoleManager().isExistingRole(role))
             return null;
