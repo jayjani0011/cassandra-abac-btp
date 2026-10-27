@@ -1757,6 +1757,9 @@ setEnvironmentAttributeStatement returns [SetEnvironmentAttributeStatement stmt]
       ( sh=INTEGER ',' sm=INTEGER ',' eh=INTEGER ',' em=INTEGER
         { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(),
                                                        new String[] { $sh.text, $sm.text, $eh.text, $em.text }); }
+      | n=noncol_ident '=' c=STRING_LITERAL { days.add($n.id.toString()); days.add($c.text); }
+        ( ',' n=noncol_ident '=' c=STRING_LITERAL { days.add($n.id.toString()); days.add($c.text); } )*
+        { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(), days.toArray(new String[0])); }
       | d=noncol_ident { days.add($d.id.toString()); }
         ( ',' d=noncol_ident { days.add($d.id.toString()); } )*
         { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(), days.toArray(new String[0])); }

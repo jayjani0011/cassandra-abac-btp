@@ -9,6 +9,18 @@ public final class CateeClientDriver
     {
         try
         {
+            if (args.length == 5 && args[1].equals("SET_SUBNET"))
+            {
+                new CateeClient(Path.of(args[0]), Integer.parseInt(args[4])).setSubnet(new CateeSubnet(args[2], args[3]));
+                System.out.println("OK HW DEBUG");
+                return;
+            }
+            if (args.length == 4 && args[1].equals("SUBNET_EXISTS"))
+            {
+                boolean exists = new CateeClient(Path.of(args[0]), Integer.parseInt(args[3])).subnetExists(args[2]);
+                System.out.println(exists ? "ALLOW HW DEBUG" : "DENY HW DEBUG");
+                return;
+            }
             if (args.length == 4 && args[1].equals("SET_WORKDAY"))
             {
                 byte[] days = new byte[args[2].length()];

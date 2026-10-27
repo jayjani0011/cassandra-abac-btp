@@ -174,9 +174,8 @@ The enclave compares the observation with the expectation and returns a rule mat
 Cassandra does not compare or reuse an enclave Boolean across rules.
 
 The common interface carries day, minute, IPv4 address, subnet name, expected
-working-day/time values and three check flags. Working day and working time are implemented. Enabling subnet checks returns an explicit error; those
-conditions never fall back to ordinary providers in CATEE mode. Client IP is a
-placeholder until subnet observation and evaluation are implemented.
+working-day/time values and three check flags. Working day and working time are implemented. Subnet conditions also use SGX with the actual client IPv4 address; protected
+conditions never fall back to ordinary providers in CATEE mode.
 
 In CATEE mode, worktime comes from SGX rather than a Java environment provider and
 never uses attribute hierarchy edges. Required service failures, invalid worktime
@@ -253,12 +252,12 @@ slot; a full 32-entry table rejects it without changing state.
 
 Successful operations use the same seal/write/fsync/rename/directory-fsync path as
 admin updates. Persistence failure returns ERROR and stops the service. The new
-version-4 sealed state includes working days, the working-hours window, grants
+version-5 sealed state includes named subnets, working days, the working-hours window, grants
 and deletion markers. Versions 1 and 2 restore their existing grants/markers and
 use the 09:00–17:00 default window. Version 3 preserves its window too. Versions
-1–3 receive Monday–Friday working days; the next successful mutation writes
-version 4. Keep the same development signing key and compatible SGX sealing
-identity. Older binaries cannot read version 4; do not
+1–3 receive Monday–Friday working days; version 4 preserves its days too.
+Versions 1–4 start with no subnets; the next successful mutation writes version 5. Keep the same development signing key and compatible SGX sealing
+identity. Older binaries cannot read version 5; do not
 downgrade them onto updated state.
 The `--init` option is never a migration or recovery mechanism.
 
@@ -465,5 +464,28 @@ to Monday-Friday, and compares the supplied day with the rule's expected Boolean
 Day and time checks are combined in one ECALL. Duplicate day names are harmless;
 unknown names are rejected before sending. Configuration remains superuser-only.
 `SET_WORKDAY <sun> <mon> <tue> <wed> <thu> <fri> <sat>` uses seven 0/1 fields.
-Subnet evaluation remains unsupported. Working days are sealed together with grants, deletion markers and the time window.
-Version 4 adds the day bitmap; versions 1–3 restore Monday–Friday by default.
+Subnet evaluation is implemented (see below). Sealing is added in catee/administration.
+
+## PATEE environmental rule names
+
+The four rule keys are `workday`, `worktime`, `subnet`, and `server_load`.
+Configure named IPv4 networks with
+`SET ENV_ATTRIBUTE subnet = campus='10.0.0.0/8', local='127.0.0.1/32';`.
+The enclave stores at most 32 names (63 UTF-8 bytes each), updates existing names,
+checks subnet existence for CREATE RULE, and evaluates supplied client IPv4 addresses.
+CIDRs require network addresses (no host bits); /0 and /32 are supported.
+Names in text IPC are hex UTF-8; `-` means no subnet in CHECK_ENV. IPv6 or missing
+client context fails a required subnet check; there is no local-client bypass.
+Cassandra passes the actual connection address explicitly from ClientState, never
+through username-wide mutable state or a ThreadLocal.
+
+`server_load` is a finite threshold in [0,1], checked outside SGX as in PATEE.
+Cassandra uses open native connections divided by a positive
+`native_transport_max_concurrent_connections`. Unlimited/zero capacity rejects a
+required load check; configuration files are not changed automatically. PostgreSQL's
+reference counts STATE_RUNNING backends; Cassandra multiplexes requests and uses
+its native connection count instead, so the metric is a documented adaptation.
+Equality satisfies the threshold. Load-only rules do not require the SGX service.
+Multiple subnet pairs are validated before sending, then applied in order as in
+PATEE; a later capacity/persistence failure can leave earlier pairs applied.
+Subnets share the sealed snapshot with days, window, grants and deletion markers.

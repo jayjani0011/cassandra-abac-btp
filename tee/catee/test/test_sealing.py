@@ -207,7 +207,7 @@ class SealingTest(unittest.TestCase):
                        check=True, capture_output=True, timeout=5)
 
     @staticmethod
-    def payload(version=4, entries=(), count=None, window=(540, 1020), days=(0,1,1,1,1,1,0)):
+    def payload(version=5, entries=(), count=None, window=(540, 1020), days=(0,1,1,1,1,1,0), subnets=(), subnet_count=None):
         legacy = version == 1
         packed = bytearray(struct.pack("<I", version))
         for role, mask, pending in entries:
@@ -220,6 +220,11 @@ class SealingTest(unittest.TestCase):
             packed.extend(struct.pack("<ii", *window))
         if version >= 4:
             packed.extend(bytes(days) + b"\0")
+        if version >= 5:
+            for name, network, prefix in subnets:
+                packed.extend(name.ljust(64, b"\0") + struct.pack("<II", network, prefix))
+            packed.extend(bytes((32 - len(subnets)) * 72))
+            packed.extend(struct.pack("<I", len(subnets) if subnet_count is None else subnet_count))
         return bytes(packed)
 
     def test_version_one_migration_preserves_all_grants(self):
@@ -342,8 +347,46 @@ class SealingTest(unittest.TestCase):
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 0 - 1 1 1 1 0\n"]))
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
 
+    def test_version_four_migration_preserves_days_and_starts_without_subnets(self):
+        self.seal_payload(self.payload(version=4, entries=[(b"alice",0,1),(b"bob",3,0)], window=(600,660), days=(1,0,0,0,0,0,1)))
+        original = self.state.read_bytes()
+        process = self.start()
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"SUBNET_EXISTS 63616d707573\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 0 - 1 1 1 1 0\n"]))
+        self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
+        self.assertEqual(original, self.state.read_bytes())
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_SUBNET 63616d707573 167772160 8\n"]))
+        self.assertGreater(self.state.stat().st_size, len(original))
+        self.stop(process)
+        self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 167772161 63616d707573 1 1 1 1 1\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
+
+    def test_subnet_updates_survive_crash_and_failed_save(self):
+        process = self.start(True)
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_SUBNET 63616d707573 167772160 8\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_WORKDAY 1 0 0 0 0 0 1\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 600 660\n"]))
+        process.kill()
+        process.wait(timeout=3)
+        self.path.unlink()
+        process = self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 167772161 63616d707573 1 1 1 1 1\n"]))
+        pending = pathlib.Path(str(self.state) + ".tmp")
+        pending.write_text("preserve")
+        original = self.state.read_bytes()
+        self.assertEqual(b"ERROR persistence_failure\n", exchange(self.path, [b"SET_SUBNET 63616d707573 2130706432 8\n"]))
+        self.assertNotEqual(0, process.wait(timeout=3))
+        self.assertEqual(original, self.state.read_bytes())
+        pending.unlink()
+        self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 167772161 63616d707573 1 1 1 1 1\n"]))
+
     def test_authenticated_invalid_payloads_rejected_without_reset(self):
-        cases = [self.payload(version=5), self.payload(days=(0,1,1,1,1,1,2)), self.payload(count=33),
+        cases = [self.payload(version=6), self.payload(subnet_count=33),
+                 self.payload(subnets=[(b"",0,0)]), self.payload(subnets=[(b"x"*64,0,0)]),
+                 self.payload(subnets=[(b"a",0,33)]), self.payload(subnets=[(b"a",1,0)]),
+                 self.payload(subnets=[(b"a",0,0),(b"a",0,0)]), self.payload(days=(0,1,1,1,1,1,2)), self.payload(count=33),
                  self.payload(entries=[(b"alice", 1, 1)]),
                  self.payload(entries=[(b"alice", 0, 2)]),
                  self.payload(entries=[(b"", 0, 1)]),

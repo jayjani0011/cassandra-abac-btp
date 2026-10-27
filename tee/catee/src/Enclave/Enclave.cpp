@@ -3,6 +3,7 @@
 #include "sgx_tseal.h"
 #include "AdminPrivileges.h"
 #include <string.h>
+#include "SubnetConfiguration.h"
 
 // Administrative state starts with no grants in each enclave instance.
 static AdminPrivileges admin_privileges;
@@ -24,11 +25,21 @@ struct LegacySealedAdminStateV3 {
     WorktimeWindow window;
 };
 
+static SubnetConfiguration subnets;
+
+struct LegacySealedAdminStateV4 {
+    uint32_t version;
+    AdminPrivileges privileges;
+    WorktimeWindow window;
+    uint8_t days[7];
+};
+
 struct SealedAdminState {
     uint32_t version;
     AdminPrivileges privileges;
     WorktimeWindow window;
     uint8_t days[7];
+    SubnetConfiguration subnets;
 };
 
 struct LegacySealedAdminStateV2 {
@@ -49,7 +60,8 @@ struct LegacySealedAdminState {
 static_assert(sizeof(LegacySealedAdminState) == 8328, "Unexpected version-1 layout");
 static_assert(sizeof(LegacySealedAdminStateV2) == 8456, "Unexpected version-2 layout");
 static_assert(sizeof(LegacySealedAdminStateV3) == 8464, "Unexpected version-3 layout");
-static_assert(sizeof(SealedAdminState) == 8472, "Unexpected version-4 layout");
+static_assert(sizeof(LegacySealedAdminStateV4) == 8472, "Unexpected version-4 layout");
+static_assert(sizeof(SealedAdminState) == 10780, "Unexpected version-5 layout");
 
 int enclave_get_sealed_size(uint32_t *sealed_size)
 {
@@ -64,7 +76,7 @@ int enclave_seal_admin(uint8_t *sealed_data, uint32_t sealed_size)
     uint32_t required = 0;
     if (enclave_get_sealed_size(&required) != 0 || sealed_data == nullptr || sealed_size != required)
         return 1;
-    SealedAdminState state{4, admin_privileges, worktime_window, {}};
+    SealedAdminState state{5, admin_privileges, worktime_window, {}, subnets};
     memcpy(state.days, workdays, sizeof(workdays));
     return sgx_seal_data(0, nullptr, sizeof(state), reinterpret_cast<const uint8_t *>(&state),
                          sealed_size, reinterpret_cast<sgx_sealed_data_t *>(sealed_data)) == SGX_SUCCESS ? 0 : 1;
@@ -76,7 +88,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     const auto *sealed = reinterpret_cast<const sgx_sealed_data_t *>(sealed_data);
     uint32_t payload_size = sgx_get_encrypt_txt_len(sealed);
     if ((payload_size != sizeof(SealedAdminState) && payload_size != sizeof(LegacySealedAdminState)
-         && payload_size != sizeof(LegacySealedAdminStateV2) && payload_size != sizeof(LegacySealedAdminStateV3))
+         && payload_size != sizeof(LegacySealedAdminStateV2) && payload_size != sizeof(LegacySealedAdminStateV3) && payload_size != sizeof(LegacySealedAdminStateV4))
         || sgx_get_add_mac_txt_len(sealed) != 0
         || sealed_size != sgx_calc_sealed_data_size(0, payload_size))
         return 1;
@@ -86,7 +98,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     if (sgx_unseal_data(sealed, nullptr, &additional_size, payload, &size) != SGX_SUCCESS
         || size != payload_size)
         return 1;
-    SealedAdminState state{4, {}, {9 * 60, 17 * 60}, {0, 1, 1, 1, 1, 1, 0}};
+    SealedAdminState state{5, {}, {9 * 60, 17 * 60}, {0, 1, 1, 1, 1, 1, 0}, {}};
     if (size == sizeof(LegacySealedAdminState))
     {
         LegacySealedAdminState legacy{};
@@ -114,11 +126,21 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
         state.privileges = legacy.privileges;
         state.window = legacy.window;
     }
+    else if (size == sizeof(LegacySealedAdminStateV4))
+    {
+        LegacySealedAdminStateV4 legacy{};
+        memcpy(&legacy, payload, sizeof(legacy));
+        if (legacy.version != 4) return 1;
+        state.privileges = legacy.privileges;
+        state.window = legacy.window;
+        memcpy(state.days, legacy.days, sizeof(state.days));
+    }
     else
     {
         memcpy(&state, payload, sizeof(state));
-        if (state.version != 4) return 1;
+        if (state.version != 5) return 1;
     }
+    if (!state.subnets.valid()) return 1;
     for (uint8_t day : state.days)
         if (day > 1) return 1;
     if (state.privileges.count > AdminPrivileges::max_admins
@@ -138,6 +160,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     admin_privileges = state.privileges;
     worktime_window = state.window;
     memcpy(workdays, state.days, sizeof(workdays));
+    subnets = state.subnets;
     return 0;
 }
 
@@ -169,6 +192,18 @@ int enclave_check_admin_priv(const char *role_name, uint32_t priv_mask, int *all
     if (!AdminPrivileges::valid_role(role_name) || priv_mask == 0)
         return 1;
     *allowed = admin_privileges.check(role_name, priv_mask);
+    return 0;
+}
+
+int enclave_set_subnet(const char *name, uint32_t network, uint32_t prefix)
+{
+    return subnets.set(name, network, prefix) ? 0 : 1;
+}
+
+int enclave_subnet_exists(const char *name, int *exists)
+{
+    if (!SubnetConfiguration::valid_name(name) || exists == nullptr) return 1;
+    *exists = subnets.contains(name);
     return 0;
 }
 
@@ -208,10 +243,6 @@ int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
         || (check_worktime != 0 && check_worktime != 1)
         || (check_subnet != 0 && check_subnet != 1))
         return 1;
-    (void) client_ip;
-    // Subnet configuration is introduced in a subsequent change.
-    if (check_subnet)
-        return 2;
     *allowed = 1;
     if (check_workday && workday_value != workdays[day_of_week])
     {
@@ -221,5 +252,6 @@ int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
     if (check_worktime)
         *allowed = worktime_value == (current_minute >= worktime_window.start_minute
                                      && current_minute < worktime_window.end_minute);
+    if (*allowed && check_subnet) *allowed = subnets.matches(subnet_name, client_ip);
     return 0;
 }

@@ -18,6 +18,8 @@
 package org.apache.cassandra.cql3.statements.schema;
 
 import java.util.Map;
+import org.apache.cassandra.auth.CassandraAuthorizer;
+import org.apache.cassandra.config.DatabaseDescriptor;
 import java.util.Set;
 
 import org.apache.cassandra.audit.AuditLogContext;
@@ -77,6 +79,8 @@ public class CreateRuleStatement extends AlterSchemaStatement
     @Override
     public void validate(ClientState state) throws RequestValidationException
     {
+        if (DatabaseDescriptor.getAuthorizer() instanceof CassandraAuthorizer)
+            ((CassandraAuthorizer) DatabaseDescriptor.getAuthorizer()).validateCateeRuleEnvironment(convert(envConditions));
     }
 
     private static String stripQuotes(String text)
@@ -109,6 +113,7 @@ public class CreateRuleStatement extends AlterSchemaStatement
         Map<String, String> userConds = convert(userConditions);
         Map<String, String> resourceConds = convert(resourceConditions);
         Map<String, String> envConds = convert(envConditions);
+        validate(state.getClientState());
 
         Set<String> permissionNames = new java.util.HashSet<>();
         for (Permission p : permissions)

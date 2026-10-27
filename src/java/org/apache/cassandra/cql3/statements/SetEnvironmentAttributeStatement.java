@@ -1,6 +1,7 @@
 package org.apache.cassandra.cql3.statements;
 
 import java.io.IOException;
+import org.apache.cassandra.auth.catee.CateeSubnet;
 
 import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
@@ -34,8 +35,22 @@ public final class SetEnvironmentAttributeStatement extends AuthenticationStatem
     public void validate(ClientState state)
     {
         state.ensureNotAnonymous();
-        if ("workday".equals(attribute)) workdays();
+        if ("subnet".equals(attribute)) subnets();
+        else if ("workday".equals(attribute)) workdays();
         else window();
+    }
+
+    private CateeSubnet[] subnets()
+    {
+        if (values.length == 0 || values.length % 2 != 0)
+            throw new InvalidRequestException("subnet requires name=CIDR pairs");
+        CateeSubnet[] entries = new CateeSubnet[values.length / 2];
+        try
+        {
+            for (int i = 0; i < entries.length; ++i) entries[i] = new CateeSubnet(values[2*i], values[2*i+1]);
+        }
+        catch (IllegalArgumentException e) { throw new InvalidRequestException(e.getMessage()); }
+        return entries;
     }
 
     private byte[] workdays()
@@ -81,20 +96,23 @@ public final class SetEnvironmentAttributeStatement extends AuthenticationStatem
     public ResultMessage execute(ClientState state)
     {
         authorize(state);
+        CateeSubnet[] subnets = "subnet".equals(attribute) ? subnets() : null;
         byte[] days = "workday".equals(attribute) ? workdays() : null;
-        int[] window = days == null ? window() : null;
+        int[] window = days == null && subnets == null ? window() : null;
         IAuthorizer authorizer = DatabaseDescriptor.getAuthorizer();
         if (!(authorizer instanceof CassandraAuthorizer))
             throw new InvalidRequestException("CATEE is not enabled");
         try
         {
-            if (days != null) ((CassandraAuthorizer) authorizer).setCateeWorkdays(days);
+            if (subnets != null)
+                for (CateeSubnet subnet : subnets) ((CassandraAuthorizer) authorizer).setCateeSubnet(subnet);
+            else if (days != null) ((CassandraAuthorizer) authorizer).setCateeWorkdays(days);
             else ((CassandraAuthorizer) authorizer).setCateeTimeWindow(window[0], window[1]);
         }
         catch (InvalidRequestException e) { throw e; }
         catch (IOException | RuntimeException | LinkageError e)
         {
-            throw new InvalidRequestException("Required CATEE " + (days == null ? "window" : "workday") + " update failed: " + e.getMessage());
+            throw new InvalidRequestException("Required CATEE " + (attribute.equals("worktime") ? "window" : attribute) + " update failed: " + e.getMessage());
         }
         return null;
     }
