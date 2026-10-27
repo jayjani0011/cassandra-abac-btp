@@ -30,6 +30,8 @@ enum RequestType
 {
     SGX_MSG_UNKNOWN,
     SGX_MSG_CHECK_ENV,
+    SGX_MSG_SET_SUBNET,
+    SGX_MSG_SUBNET_EXISTS,
     SGX_MSG_SET_WORKDAY,
     SGX_MSG_SET_TIMEWINDOW
 };
@@ -41,6 +43,21 @@ std::string socket_path;
 struct stat socket_identity{};
 bool socket_bound = false;
 volatile std::sig_atomic_t stopping = 0;
+
+// Names are hex-encoded UTF-8, keeping spaces and arbitrary identifier bytes framed.
+std::string decode_subnet_name(const std::string &hex)
+{
+    if (hex.empty() || hex.size() > 126 || hex.size() % 2 != 0) return {};
+    std::string name;
+    for (size_t i = 0; i < hex.size(); i += 2)
+    {
+        unsigned value = 0;
+        auto result = std::from_chars(hex.data() + i, hex.data() + i + 2, value, 16);
+        if (result.ec != std::errc() || result.ptr != hex.data() + i + 2 || value == 0) return {};
+        name.push_back(static_cast<char>(value));
+    }
+    return name;
+}
 
 /* ---------- Helpers ---------- */
 
@@ -235,8 +252,46 @@ int main(int argc, char **argv)
                                ? SGX_MSG_CHECK_ENV : SGX_MSG_UNKNOWN;
             if (request.compare(0, 15, "SET_TIMEWINDOW ") == 0) type = SGX_MSG_SET_TIMEWINDOW;
             if (request.compare(0, 12, "SET_WORKDAY ") == 0) type = SGX_MSG_SET_WORKDAY;
+            if (request.compare(0, 11, "SET_SUBNET ") == 0) type = SGX_MSG_SET_SUBNET;
+            if (request.compare(0, 14, "SUBNET_EXISTS ") == 0) type = SGX_MSG_SUBNET_EXISTS;
             switch (type)
             {
+                case SGX_MSG_SET_SUBNET:
+                case SGX_MSG_SUBNET_EXISTS:
+                {
+                    bool update = type == SGX_MSG_SET_SUBNET;
+                    std::istringstream fields(request.substr(update ? 11 : 14));
+                    std::string encoded, network_text, prefix_text, extra;
+                    uint32_t network = 0, prefix = 0;
+                    bool valid = static_cast<bool>(fields >> encoded);
+                    if (update)
+                    {
+                        valid = valid && static_cast<bool>(fields >> network_text >> prefix_text);
+                        auto n = std::from_chars(network_text.data(), network_text.data() + network_text.size(), network);
+                        auto p = std::from_chars(prefix_text.data(), prefix_text.data() + prefix_text.size(), prefix);
+                        valid = valid && n.ec == std::errc() && n.ptr == network_text.data() + network_text.size()
+                                      && p.ec == std::errc() && p.ptr == prefix_text.data() + prefix_text.size();
+                    }
+                    if (fields >> extra) valid = false;
+                    std::string name = decode_subnet_name(encoded);
+                    if (!valid || name.empty())
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1, exists = 0;
+                    ret = update ? enclave_set_subnet(global_eid, &result, name.c_str(), network, prefix)
+                                 : enclave_subnet_exists(global_eid, &result, name.c_str(), &exists);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0) reply(client_fd, "ERROR subnet_operation_failed\n");
+                    else if (!update) reply(client_fd, exists ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
+                    else reply(client_fd, "OK HW DEBUG\n");
+                    break;
+                }
                 case SGX_MSG_SET_WORKDAY:
                 {
                     uint8_t days[7]{};
@@ -311,8 +366,8 @@ int main(int argc, char **argv)
                                              : std::from_chars(tokens[i].data(), end, values[j++]);
                         valid = parsed.ec == std::errc() && parsed.ptr == end;
                     }
-                    const std::string &subnet = tokens[3];
-                    if (!valid || subnet.size() > 63)
+                    std::string subnet = tokens[3] == "-" ? "" : decode_subnet_name(tokens[3]);
+                    if (!valid || (tokens[3] != "-" && subnet.empty()))
                     {
                         reply(client_fd, "ERROR invalid_request\n");
                         break;
@@ -322,7 +377,7 @@ int main(int argc, char **argv)
                     int check_day = values[4], check_time = values[5], check_subnet = values[6];
                     int result = -1, allowed = 0, debug = 0;
                     ret = enclave_check_env(global_eid, &result, day, minute, ip,
-                                            subnet == "-" ? "" : subnet.c_str(),
+                                            subnet.c_str(),
                                             expected_day, expected_time, check_day, check_time,
                                             check_subnet, &allowed, &debug);
                     if (ret != SGX_SUCCESS || (result != 0 && result != 1 && result != 2))

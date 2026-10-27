@@ -30,6 +30,13 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
     {
         int calls, start, end, failure;
         byte[] days;
+        org.apache.cassandra.auth.catee.CateeSubnet subnet;
+        public void setCateeSubnet(org.apache.cassandra.auth.catee.CateeSubnet value) throws IOException
+        {
+            calls++;
+            if (failure != 0) throw new IOException("Service unavailable");
+            subnet = value;
+        }
         public void setCateeWorkdays(byte[] values) throws IOException
         {
             calls++;
@@ -107,7 +114,7 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
     @Test
     public void rejectsUnsupportedAttributesAndMalformedSyntax()
     {
-        try { parse("SET ENV_ATTRIBUTE subnet = 9,0,17,0").execute(state); fail(); }
+        try { parse("SET ENV_ATTRIBUTE unknown = 9,0,17,0").execute(state); fail(); }
         catch (InvalidRequestException expected) { assertTrue(expected.getMessage().contains("Unsupported")); }
         for (String query : new String[] {"SET ENV_ATTRIBUTE worktime = 9,0,17",
                                           "SET ENV_ATTRIBUTE worktime = 9,0,17,0,1",
@@ -159,6 +166,25 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
             if (previousSocket == null) CassandraRelevantProperties.CATEE_SOCKET.clearValue();
             else CassandraRelevantProperties.CATEE_SOCKET.setString(previousSocket);
         }
+    }
+
+    @Test
+    public void parsesNamedSubnetsAndValidatesBeforeUpdating()
+    {
+        parse("SET ENV_ATTRIBUTE subnet = campus='10.0.0.0/8', loopback='127.0.0.1/32'").execute(state);
+        assertEquals("loopback", authorizer.subnet.name);
+        assertEquals(2130706433L, authorizer.subnet.network);
+        assertEquals(32, authorizer.subnet.prefix);
+        int calls = authorizer.calls;
+        for (String cidr : new String[] {"10.0.0.1/8", "::1/128", "host/8", "1.2.3.4/33", "256.0.0.0/8"})
+        {
+            try { parse("SET ENV_ATTRIBUTE subnet = first='0.0.0.0/0', second='" + cidr + "'").execute(state); fail(cidr); }
+            catch (InvalidRequestException expected) { }
+        }
+        assertEquals(calls, authorizer.calls);
+        when(state.isSuper()).thenReturn(false);
+        try { parse("SET ENV_ATTRIBUTE subnet = campus='0.0.0.0/0'").execute(state); fail(); }
+        catch (UnauthorizedException expected) { }
     }
 
     @Test

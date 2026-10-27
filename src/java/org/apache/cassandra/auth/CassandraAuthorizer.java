@@ -20,6 +20,9 @@ package org.apache.cassandra.auth;
 import org.apache.cassandra.service.EnvironmentAttributeManager;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import org.apache.cassandra.auth.catee.CateeSubnet;
+import org.apache.cassandra.metrics.ClientMetrics;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -107,6 +110,67 @@ public class CassandraAuthorizer implements IAuthorizer
                                            conditions.containsKey("subnet"));
     }
 
+    private boolean checkCateeEnvironment(Map<String, String> conditions, InetAddress address) throws IOException
+    {
+        if (!conditions.containsKey("subnet")) return checkCateeEnvironment(conditions);
+        if (address == null || address.getAddress().length != 4)
+            throw new UnauthorizedException("subnet requires the actual IPv4 client address");
+        long ip = 0;
+        for (byte octet : address.getAddress()) ip = (ip << 8) | (octet & 255);
+        LocalDateTime now = LocalDateTime.now();
+        return cateeClient.checkEnvironment(now.getDayOfWeek().getValue() % 7,
+                now.getHour() * 60 + now.getMinute(), ip, conditions.get("subnet"),
+                Boolean.parseBoolean(conditions.get("workday")), Boolean.parseBoolean(conditions.get("worktime")),
+                conditions.containsKey("workday"), conditions.containsKey("worktime"), true);
+    }
+
+    double cateeServerLoad()
+    {
+        long limit = DatabaseDescriptor.getNativeTransportMaxConcurrentConnections();
+        if (limit <= 0) throw new UnauthorizedException("server_load requires a positive native connection limit");
+        return (double) ClientMetrics.instance.countConnectedClients() / limit;
+    }
+
+    private static double serverLoadThreshold(String value)
+    {
+        try
+        {
+            double threshold = Double.parseDouble(value);
+            if (Double.isFinite(threshold) && threshold >= 0 && threshold <= 1) return threshold;
+        }
+        catch (RuntimeException e) { }
+        throw new InvalidRequestException("server_load must be a finite number between 0 and 1");
+    }
+
+    public void validateCateeRuleEnvironment(Map<String, String> conditions)
+    {
+        if (!isCateeEnabled() || conditions == null) return;
+        for (String name : Arrays.asList("workday", "worktime"))
+            if (conditions.containsKey(name) && !"true".equals(conditions.get(name)) && !"false".equals(conditions.get(name)))
+                throw new InvalidRequestException(name + " requires true or false");
+        if (conditions.containsKey("server_load")) serverLoadThreshold(conditions.get("server_load"));
+        if (conditions.containsKey("subnet"))
+        {
+            try
+            {
+                if (!cateeClient.subnetExists(conditions.get("subnet")))
+                    throw new InvalidRequestException("Unknown subnet: " + conditions.get("subnet"));
+            }
+            catch (IOException | IllegalArgumentException e) { throw new InvalidRequestException("Cannot validate subnet: " + e.getMessage()); }
+        }
+    }
+
+    public void setCateeSubnet(CateeSubnet subnet) throws IOException
+    {
+        if (!isCateeEnabled()) throw new InvalidRequestException("CATEE is not enabled");
+        cateeClient.setSubnet(subnet);
+    }
+
+    public Set<Permission> authorizeWithContext(AuthenticatedUser user, IResource resource, InetAddress address)
+    {
+        return isCateeEnabled() ? authorize(user, resource, address) : user.getPermissions(resource);
+    }
+
     public void setCateeWorkdays(byte[] days) throws IOException
     {
         if (!isCateeEnabled())
@@ -125,6 +189,11 @@ public class CassandraAuthorizer implements IAuthorizer
     // or indirectly via roles granted to the user.
     public Set<Permission> authorize(AuthenticatedUser user, IResource resource)
     {
+        return authorize(user, resource, null);
+    }
+
+    private Set<Permission> authorize(AuthenticatedUser user, IResource resource, InetAddress address)
+    {
         logger.info("AUTHORIZE CALLED FOR RESOURCE: {}", resource.getName());
         try
         {
@@ -141,7 +210,7 @@ public class CassandraAuthorizer implements IAuthorizer
             // New ABAC logic
             try
             {
-                Set<Permission> abacPermissions = getAbacPermissions(user, resource);
+                Set<Permission> abacPermissions = getAbacPermissions(user, resource, address);
                 permissions.addAll(abacPermissions);
             }
             catch (Exception e)
@@ -161,6 +230,11 @@ public class CassandraAuthorizer implements IAuthorizer
     }
 
     Set<Permission> getAbacPermissions(AuthenticatedUser user, IResource resource)
+    {
+        return getAbacPermissions(user, resource, null);
+    }
+
+    private Set<Permission> getAbacPermissions(AuthenticatedUser user, IResource resource, InetAddress address)
     {
         logger.info("Performing ABAC authorization for user {} on resource {}", user.getName(), resource.getName());
 
@@ -203,7 +277,7 @@ public class CassandraAuthorizer implements IAuthorizer
             for (String attributeName : requiredEnvAttributes)
             {
                 // Protected conditions are evaluated together for each applicable rule.
-                if (isCateeEnabled() && CATEE_ENVIRONMENT_ATTRIBUTES.contains(attributeName))
+                if (isCateeEnabled() && (CATEE_ENVIRONMENT_ATTRIBUTES.contains(attributeName) || "server_load".equals(attributeName)))
                     continue;
                 try
                 {
@@ -235,7 +309,7 @@ public class CassandraAuthorizer implements IAuthorizer
             boolean userConditionsMet = evaluateConditions(ruleUserConditions, userAttributes);
             boolean resourceConditionsMet = evaluateConditions(ruleResourceConditions, resourceAttributes);
             boolean environmentConditionsMet = userConditionsMet && resourceConditionsMet
-                                               && evaluateEnvironmentConditions(ruleEnvironmentConditions, envAttributes);
+                                               && evaluateEnvironmentConditions(ruleEnvironmentConditions, envAttributes, address);
 
             logger.info("Conditions met - U, R, E : {}, {}, {}", userConditionsMet, resourceConditionsMet, environmentConditionsMet);
 
@@ -262,7 +336,7 @@ public class CassandraAuthorizer implements IAuthorizer
         return grantedPermissions;
     }
 
-    private boolean evaluateEnvironmentConditions(Map<String, String> conditions, Map<String, String> attributes)
+    private boolean evaluateEnvironmentConditions(Map<String, String> conditions, Map<String, String> attributes, InetAddress address)
     {
         if (!isCateeEnabled())
             return evaluateConditions(conditions, attributes);
@@ -277,11 +351,16 @@ public class CassandraAuthorizer implements IAuthorizer
                 throw new UnauthorizedException(name + " requires true or false");
             protectedConditions.put(name, expected);
         }
+        if (ordinary.containsKey("server_load"))
+        {
+            double threshold = serverLoadThreshold(ordinary.remove("server_load"));
+            if (cateeServerLoad() > threshold) return false;
+        }
         if (!evaluateConditions(ordinary, attributes)) return false;
         if (protectedConditions.isEmpty()) return true;
         try
         {
-            return checkCateeEnvironment(protectedConditions);
+            return checkCateeEnvironment(protectedConditions, address);
         }
         catch (IOException | RuntimeException | LinkageError e)
         {

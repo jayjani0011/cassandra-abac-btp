@@ -35,7 +35,7 @@ $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h &: src/Enclave/Enc
 $(BUILD)/Enclave_t.o: $(BUILD)/trusted/Enclave_t.c $(BUILD)/trusted/Enclave_t.h
 	$(CC) $(TRUSTED_FLAGS) -c $< -o $@
 
-$(BUILD)/Enclave.o: src/Enclave/Enclave.cpp $(BUILD)/trusted/Enclave_t.h
+$(BUILD)/Enclave.o: src/Enclave/Enclave.cpp src/Enclave/SubnetConfiguration.h $(BUILD)/trusted/Enclave_t.h
 	$(CXX) $(TRUSTED_FLAGS) -std=c++11 -nostdinc++ -I$(SGX_SDK)/include/libcxx -c $< -o $@
 
 $(BUILD)/Enclave_u.o: $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h
@@ -87,7 +87,7 @@ $(JAVA_JARS):
 .PHONY: java-client test-java
 java-client: $(JAVA_JARS)
 	mkdir -p $(BUILD)/java
-	javac --release 11 -cp '$(BUILD)/java-deps/*' -d $(BUILD)/java ../../src/java/org/apache/cassandra/auth/catee/CateeClient.java $$(find test/java -name '*.java')
+	javac --release 11 -cp '$(BUILD)/java-deps/*' -d $(BUILD)/java ../../src/java/org/apache/cassandra/auth/catee/CateeClient.java ../../src/java/org/apache/cassandra/auth/catee/CateeSubnet.java $$(find test/java -name '*.java')
 
 test-java: all java-client
 	python3 test/test_java_client.py

@@ -39,13 +39,23 @@ public final class CateeClient
     {
         if (day < 0 || day > 6 || minute < 0 || minute >= 1440
             || clientIp < 0 || clientIp > 0xffffffffL || subnet == null
-            || subnet.length() > 63 || (!subnet.isEmpty() && !subnet.matches("[A-Za-z0-9_.-]+"))
-            || subnet.equals("-"))
+            )
             throw new IllegalArgumentException("Invalid environmental observation");
         return predicate(request("CHECK_ENV " + day + " " + minute + " " + clientIp + " "
-                                 + (subnet.isEmpty() ? "-" : subnet) + " "
+                                 + (subnet.isEmpty() ? "-" : CateeSubnet.encodeName(subnet)) + " "
                                  + (expectedDay ? 1 : 0) + " " + (expectedTime ? 1 : 0) + " "
                                  + (checkDay ? 1 : 0) + " " + (checkTime ? 1 : 0) + " " + (checkSubnet ? 1 : 0)));
+    }
+
+    public void setSubnet(CateeSubnet subnet) throws IOException
+    {
+        if (!request("SET_SUBNET " + CateeSubnet.encodeName(subnet.name) + " " + subnet.network + " " + subnet.prefix).equals("OK HW DEBUG"))
+            throw new IOException("CATEE returned an error or invalid response");
+    }
+
+    public boolean subnetExists(String name) throws IOException
+    {
+        return predicate(request("SUBNET_EXISTS " + CateeSubnet.encodeName(name)));
     }
 
     public void setWorkdays(byte[] days) throws IOException

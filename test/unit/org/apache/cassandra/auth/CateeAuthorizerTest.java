@@ -42,6 +42,8 @@ public class CateeAuthorizerTest extends CQLTester
         boolean enabled = true;
         Boolean worktime = true;
         int checks;
+        double load = 0.5;
+        double cateeServerLoad() { return load; }
 
         boolean isCateeEnabled() { return enabled; }
         boolean checkCateeEnvironment(Map<String, String> conditions) throws IOException
@@ -146,6 +148,42 @@ public class CateeAuthorizerTest extends CQLTester
     }
 
     @Test
+    public void serverLoadThresholdIsDatabaseSideAndValidated()
+    {
+        TestAuthorizer authorizer = authorizer();
+        rule("load", "GRANT", Map.of("server_load", "0.5"));
+        assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
+        authorizer.load = 0.5001;
+        assertTrue(authorizer.authorize(USER, RESOURCE).isEmpty());
+        assertEquals(0, authorizer.checks);
+        for (String value : new String[] {"NaN", "Infinity", "-0.1", "1.1", "bad"})
+        {
+            rule("load", "GRANT", Map.of("server_load", value));
+            assertUnauthorized(() -> authorizer.authorize(USER, RESOURCE));
+        }
+        rule("load", "GRANT", Map.of("server_load", "0"));
+        authorizer.load = 0;
+        assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
+    }
+
+    @Test
+    public void serverLoadRequiresFiniteConnectionCapacity()
+    {
+        long original = org.apache.cassandra.config.DatabaseDescriptor.getNativeTransportMaxConcurrentConnections();
+        try
+        {
+            for (long limit : new long[] {-1, 0})
+            {
+                org.apache.cassandra.config.DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(limit);
+                assertUnauthorized(() -> new CassandraAuthorizer().cateeServerLoad());
+            }
+            org.apache.cassandra.config.DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(1000);
+            assertTrue(new CassandraAuthorizer().cateeServerLoad() >= 0);
+        }
+        finally { org.apache.cassandra.config.DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(original); }
+    }
+
+    @Test
     public void invalidConditionFailsClosed()
     {
         grantRbac();
@@ -231,9 +269,14 @@ public class CateeAuthorizerTest extends CQLTester
             assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
             rule("hardware", "GRANT", Map.of("workday", Boolean.toString(!Boolean.parseBoolean(workingDay))));
             assertTrue(authorizer.authorize(USER, RESOURCE).isEmpty());
-            // Unsupported subnet checks must not fall back to ordinary providers.
+            // Missing context fails closed; the same identity must not share IP decisions.
             rule("hardware", "GRANT", Map.of("subnet", "campus"));
             assertUnauthorized(() -> authorizer.authorize(USER, RESOURCE));
+            client.setSubnet(new org.apache.cassandra.auth.catee.CateeSubnet("campus", "10.0.0.0/8"));
+            assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorizeWithContext(USER, RESOURCE, java.net.InetAddress.getByName("10.2.3.4")));
+            assertTrue(authorizer.authorizeWithContext(USER, RESOURCE, java.net.InetAddress.getByName("11.2.3.4")).isEmpty());
+            java.net.InetAddress ipv6 = java.net.InetAddress.getByName("::1");
+            assertUnauthorized(() -> authorizer.authorizeWithContext(USER, RESOURCE, ipv6));
             rule("hardware", "GRANT", Map.of("worktime", actual));
             grantRbac();
             cache = testCache(authorizer);

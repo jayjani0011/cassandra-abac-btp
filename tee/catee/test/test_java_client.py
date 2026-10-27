@@ -67,6 +67,15 @@ class JavaHardwareTest(HardwareBase):
         finally:
             self.assertEqual(0, configure("0111110").returncode)
 
+    def test_java_configures_named_ipv4_subnet(self):
+        def configure(cidr):
+            return subprocess.run(["java", "-cp", f"{ROOT}/build/java:{ROOT}/build/java-deps/*",
+                                   "org.apache.cassandra.auth.catee.CateeClientDriver", str(self.path),
+                                   "SET_SUBNET", "Java subnet", cidr, "2000"], capture_output=True, text=True, timeout=5)
+        self.assertEqual(0, configure("127.0.0.0/8").returncode)
+        for cidr in ["localhost/8", "::1/128", "127.0.0.1/8", "256.0.0.0/8", "0.0.0.0/33", "1.2.3.4", "01.0.0.0/8"]:
+            self.assertNotEqual(0, configure(cidr).returncode, cidr)
+
     def test_java_worktime_boundaries(self):
         for minute, expected in [(0, "DENY"), (539, "DENY"), (540, "ALLOW"),
                                  (840, "ALLOW"), (1019, "ALLOW"), (1020, "DENY"),

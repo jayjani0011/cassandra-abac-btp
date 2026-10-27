@@ -1,6 +1,7 @@
 #include "Enclave_t.h"
 #include "sgx_utils.h"
 #include <string.h>
+#include "SubnetConfiguration.h"
 
 // Configuration and comparison both live in the enclave.
 struct WorktimeWindow {
@@ -12,6 +13,20 @@ static WorktimeWindow worktime_window{9 * 60, 17 * 60};
 
 // PATEE indexes Sunday=0 and initializes Monday through Friday as working days.
 static uint8_t workdays[7]{0, 1, 1, 1, 1, 1, 0};
+
+static SubnetConfiguration subnets;
+
+int enclave_set_subnet(const char *name, uint32_t network, uint32_t prefix)
+{
+    return subnets.set(name, network, prefix) ? 0 : 1;
+}
+
+int enclave_subnet_exists(const char *name, int *exists)
+{
+    if (!SubnetConfiguration::valid_name(name) || exists == nullptr) return 1;
+    *exists = subnets.contains(name);
+    return 0;
+}
 
 int enclave_set_workday(const uint8_t *days)
 {
@@ -49,10 +64,6 @@ int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
         || (check_worktime != 0 && check_worktime != 1)
         || (check_subnet != 0 && check_subnet != 1))
         return 1;
-    (void) client_ip;
-    // Subnet configuration is introduced in a subsequent change.
-    if (check_subnet)
-        return 2;
     *allowed = 1;
     if (check_workday && workday_value != workdays[day_of_week])
     {
@@ -62,5 +73,6 @@ int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
     if (check_worktime)
         *allowed = worktime_value == (current_minute >= worktime_window.start_minute
                                      && current_minute < worktime_window.end_minute);
+    if (*allowed && check_subnet) *allowed = subnets.matches(subnet_name, client_ip);
     return 0;
 }

@@ -248,7 +248,7 @@ public final class ClientMetrics
         queueTime = registerTimer("Queued");
     }
 
-    private int countConnectedClients()
+    public int countConnectedClients()
     {
         return server == null ? 0 : server.countConnectedClients();
     }
