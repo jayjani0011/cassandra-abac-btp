@@ -60,3 +60,9 @@ enclave security, attestation or side channels, which are outside this prototype
 No historical experiment directories are overwritten. The smoke run is not a
 replacement for the separate full evaluation protocol or sustained deployment
 load testing.
+
+Environmental checks use PATEE-style observations, expectations and required-check
+flags. Direct hardware ECALL, socket, Java and authorizer tests cover expected
+true/false, per-rule evaluation, invalid inputs and fail-closed rejection of
+working-day/subnet checks until their implementation. The old CHECK wire command
+is replaced by CHECK_ENV; persistence and benchmark readiness probes use it too.

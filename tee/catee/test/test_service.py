@@ -77,7 +77,7 @@ class HardwareServiceTest(unittest.TestCase):
                 self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_TIMEWINDOW {start} {end}\n".encode()]))
                 for minute in range(1440):
                     expected = b"ALLOW HW DEBUG\n" if start <= minute < end else b"DENY HW DEBUG\n"
-                    self.assertEqual(expected, exchange(self.path, [f"CHECK {minute}\n".encode()]),
+                    self.assertEqual(expected, exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]),
                                      (start, end, minute))
         finally:
             self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
@@ -112,22 +112,42 @@ class HardwareServiceTest(unittest.TestCase):
     def test_enclave_rejects_out_of_range_minutes(self):
         for minute in [-1, 1440]:
             with self.subTest(minute=minute):
-                self.assertEqual(b"ERROR invalid_time\n",
-                                 exchange(self.path, [f"CHECK {minute}\n".encode()]))
+                self.assertEqual(b"ERROR invalid_environment\n",
+                                 exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]))
 
     def test_malformed_requests_do_not_kill_service(self):
-        for request in [b"\n", b"HELLO\n", b"CHECK \n", b"CHECK nope\n",
-                        b"CHECK 840 extra\n", b"CHECK 999999999999999999999\n",
-                        b"x" * 64 + b"\n"]:
+        for request in [b"\n", b"HELLO\n", b"CHECK_ENV 0  0 - 0 1 0 1 0\n", b"CHECK_ENV 0 nope 0 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 extra 0 - 0 1 0 1 0\n", b"CHECK_ENV 0 999999999999999999999 0 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 -1 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 4294967296 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 0 - 0 1 0 1 0 extra\n",
+                        b"x" * 256 + b"\n"]:
             with self.subTest(request=request):
                 self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]))
         self.assertTrue(check_time(str(self.path), "14:00"))
 
+    def test_combined_environment_checks(self):
+        for minute in [0, 539, 540, 840, 1019, 1020, 1439]:
+            for expected in [0, 1]:
+                matched = expected == (540 <= minute < 1020)
+                response = exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 {expected} 0 1 0\n".encode()])
+                self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n", response)
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 0 0 0 0\n"]))
+        for flags in ["1 0 0", "0 0 1", "1 1 1"]:
+            self.assertEqual(b"ERROR unsupported_check\n",
+                             exchange(self.path, [f"CHECK_ENV 0 840 0 named 1 1 {flags}\n".encode()]))
+        for fields in ["7 840 0 - 0 1 0 1 0", "0 -1 0 - 0 1 0 1 0",
+                       "0 1440 0 - 0 1 0 1 0", "0 840 0 - 0 2 0 1 0",
+                       "0 840 0 - 0 1 0 2 0"]:
+            self.assertEqual(b"ERROR invalid_environment\n",
+                             exchange(self.path, [f"CHECK_ENV {fields}\n".encode()]))
+        self.assertTrue(check_time(str(self.path), "14:00"))
+
     def test_fragmented_request(self):
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CH", b"ECK ", b"840", b"\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CH", b"ECK_ENV ", b"0 840 0 - 0 1 0 1 0", b"\n"]))
 
     def test_incomplete_request_times_out(self):
-        self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [b"CHECK "]))
+        self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [b"CHECK_ENV "]))
         self.assertTrue(check_time(str(self.path), "14:00"))
 
     def test_existing_file_is_not_overwritten(self):

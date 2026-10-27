@@ -161,3 +161,12 @@ test-admin-sanitized:
 	./$(BUILD)/test-admin-sanitized
 
 test: persistence-faults
+
+.PHONY: test-environment-hw
+$(BUILD)/test-environment-ecalls: test/test_environment_ecalls.cpp $(BUILD)/Enclave_u.o
+	$(CXX) $(HOST_FLAGS) -std=c++11 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
+
+test-environment-hw: $(BUILD)/test-environment-ecalls $(BUILD)/enclave.signed.so
+	./$(BUILD)/test-environment-ecalls $(BUILD)/enclave.signed.so
+
+test: test-environment-hw

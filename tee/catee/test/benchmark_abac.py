@@ -108,7 +108,7 @@ def main():
                     if process.poll() is not None:
                         raise RuntimeError("Hardware service failed to start")
                     try:
-                        if exchange(socket, [b"CHECK 840\n"]) == b"ALLOW HW DEBUG\n":
+                        if exchange(socket, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]) == b"ALLOW HW DEBUG\n":
                             break
                     except OSError:
                         time.sleep(0.05)

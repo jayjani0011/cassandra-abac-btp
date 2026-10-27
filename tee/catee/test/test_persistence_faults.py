@@ -61,8 +61,8 @@ class PersistenceFaultTest(unittest.TestCase):
         fixture.path.unlink(missing_ok=True) # Process is verified dead above.
         fixture.start()
         new_window = operation == "window" and replaced
-        self.assertEqual(b"DENY HW DEBUG\n" if new_window else b"ALLOW HW DEBUG\n", request(b"CHECK 630"))
-        self.assertEqual(b"ALLOW HW DEBUG\n" if new_window else b"DENY HW DEBUG\n", request(b"CHECK 750"))
+        self.assertEqual(b"DENY HW DEBUG\n" if new_window else b"ALLOW HW DEBUG\n", request(b"CHECK_ENV 0 630 0 - 0 1 0 1 0"))
+        self.assertEqual(b"ALLOW HW DEBUG\n" if new_window else b"DENY HW DEBUG\n", request(b"CHECK_ENV 0 750 0 - 0 1 0 1 0"))
         self.assertEqual(b"ALLOW HW DEBUG\n", request(b"CHECK_ADMIN_PRIV 626f62 8"))
         if operation == "finish":
             self.assertEqual(b"OK HW DEBUG\n" if replaced else b"ERROR admin_operation_failed\n",

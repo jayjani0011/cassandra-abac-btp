@@ -167,9 +167,17 @@ map; no CQL grammar or schema changes are needed.
 
 The flow follows PATEE's `check_abac_env_conditions()`: the database observes local
 time and asks the service to check it. The host clock and JVM timezone are trusted
-inputs. For working-hours evaluation, Cassandra only requests SGX when user/resource conditions and
-other environmental conditions match a rule requiring worktime. It reuses the
-result across applicable rules in that authorization call.
+inputs. Cassandra only requests SGX evaluation when user/resource conditions and
+other environmental conditions match a rule requiring a protected check. Each
+applicable rule sends its expectations to `enclave_check_env`, following PATEE.
+The enclave compares the observation with the expectation and returns a rule match;
+Cassandra does not compare or reuse an enclave Boolean across rules.
+
+The common interface carries day, minute, IPv4 address, subnet name, expected
+working-day/time values and three check flags. Only working time is implemented
+currently. Enabling working-day or subnet checks returns an explicit error; those
+conditions never fall back to ordinary providers in CATEE mode. Client IP is a
+placeholder until subnet observation and evaluation are implemented.
 
 In CATEE mode, worktime comes from SGX rather than a Java environment provider and
 never uses attribute hierarchy edges. Required service failures, invalid worktime
@@ -526,8 +534,8 @@ and the trusted database/service caller assumptions remain unchanged.
 
 ## Deliberately small scope
 
-- One request per connection: ASCII `CHECK <minute>\n` (minute 0–1439), or an
-  administrative operation above, or `SET_TIMEWINDOW <startMinute> <endMinute>\n`.
+- One request per connection: ASCII `CHECK_ENV <day> <minute> <ipv4> <subnet> <expectedDay> <expectedTime> <checkDay> <checkTime> <checkSubnet>\n`, or
+  `SET_TIMEWINDOW <startMinute> <endMinute>\n`, or an administrative operation above.
 - Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, `OK HW DEBUG\n`, or `ERROR <reason>\n`.
 - Requests are limited to 544 bytes including the newline, with a one-second
   request deadline. Inputs outside the minute range are rejected inside SGX.
@@ -545,3 +553,10 @@ remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
 Architecture reference: [PATEE's pinned implementation](https://github.com/harshit-jain52/postgres/tree/79d3f29576419d457c516bcda5d757d99f104b14/tee).
+
+`CHECK_ENV` uses Sunday=0 through Saturday=6, minute 0–1439, an unsigned
+IPv4 integer, and 0/1 Boolean fields. `-` denotes no subnet. For example,
+`CHECK_ENV 0 840 0 - 0 0 0 1 0` asks whether 14:00 matches worktime=false.
+The existing exclusive end boundary and default 09:00–17:00 window are unchanged.
+`CateeClient.checkWorktime` remains a convenience wrapper requesting expected=true;
+it uses this same common ECALL, not an observation-only enclave operation.

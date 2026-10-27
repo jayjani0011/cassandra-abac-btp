@@ -2,6 +2,7 @@
 #include "sgx_utils.h"
 #include "sgx_tseal.h"
 #include "AdminPrivileges.h"
+#include <string.h>
 
 // Administrative state starts with no grants in each enclave instance.
 static AdminPrivileges admin_privileges;
@@ -156,15 +157,32 @@ int enclave_set_timewindow(int start_minute, int end_minute)
     return 0;
 }
 
-int check_worktime(int minute, int *allowed, int *debug)
+// Interface and combined-condition pattern adapted from PATEE's enclave_check_env.
+// Reference: harshit-jain52/postgres, patee, 79d3f29576419d457c516bcda5d757d99f104b14.
+int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
+                      const char *subnet_name, int workday_value, int worktime_value,
+                      int check_workday, int check_worktime, int check_subnet,
+                      int *allowed, int *debug)
 {
     if (allowed == nullptr || debug == nullptr)
         return 1;
     *allowed = 0;
     *debug = (sgx_self_report()->body.attributes.flags & SGX_FLAGS_DEBUG) != 0;
-    if (minute < 0 || minute >= 24 * 60)
+    if (day_of_week < 0 || day_of_week > 6 || current_minute < 0 || current_minute >= 1440
+        || subnet_name == nullptr || strlen(subnet_name) > 63
+        || (workday_value != 0 && workday_value != 1)
+        || (worktime_value != 0 && worktime_value != 1)
+        || (check_workday != 0 && check_workday != 1)
+        || (check_worktime != 0 && check_worktime != 1)
+        || (check_subnet != 0 && check_subnet != 1))
         return 1;
-
-    *allowed = minute >= worktime_window.start_minute && minute < worktime_window.end_minute;
+    (void) client_ip;
+    // Working-day and subnet configuration are introduced in a subsequent change.
+    if (check_workday || check_subnet)
+        return 2;
+    *allowed = 1;
+    if (check_worktime)
+        *allowed = worktime_value == (current_minute >= worktime_window.start_minute
+                                     && current_minute < worktime_window.end_minute);
     return 0;
 }

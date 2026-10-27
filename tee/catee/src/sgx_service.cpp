@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <fcntl.h>
+#include <sstream>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/file.h>
@@ -31,7 +32,7 @@ constexpr int LISTEN_BACKLOG = 16;
 enum RequestType
 {
     SGX_MSG_UNKNOWN,
-    SGX_MSG_CHECK_WORKTIME,
+    SGX_MSG_CHECK_ENV,
     SGX_MSG_GRANT_ADMIN_PRIV,
     SGX_MSG_REVOKE_ADMIN_PRIV,
     SGX_MSG_CHECK_ADMIN_PRIV,
@@ -364,8 +365,8 @@ int main(int argc, char **argv)
                 close_client();
                 continue;
             }
-            RequestType type = request.compare(0, 6, "CHECK ") == 0
-                               ? SGX_MSG_CHECK_WORKTIME : SGX_MSG_UNKNOWN;
+            RequestType type = request.compare(0, 10, "CHECK_ENV ") == 0
+                               ? SGX_MSG_CHECK_ENV : SGX_MSG_UNKNOWN;
             if (request.compare(0, 17, "GRANT_ADMIN_PRIV ") == 0) type = SGX_MSG_GRANT_ADMIN_PRIV;
             if (request.compare(0, 18, "REVOKE_ADMIN_PRIV ") == 0) type = SGX_MSG_REVOKE_ADMIN_PRIV;
             if (request.compare(0, 17, "CHECK_ADMIN_PRIV ") == 0) type = SGX_MSG_CHECK_ADMIN_PRIV;
@@ -415,20 +416,39 @@ int main(int argc, char **argv)
                     }
                     break;
                 }
-                case SGX_MSG_CHECK_WORKTIME:
+                case SGX_MSG_CHECK_ENV:
                 {
-                    int minute = 0;
-                    const char *end = request.data() + request.size();
-                    auto parsed = std::from_chars(request.data() + 6, end, minute);
-                    if (parsed.ec != std::errc() || parsed.ptr != end)
+                    int values[7]{};
+                    uint32_t ip = 0;
+                    std::string tokens[9], extra;
+                    std::istringstream fields(request.substr(10));
+                    bool valid = true;
+                    for (auto &token : tokens)
+                        if (!(fields >> token)) valid = false;
+                    if (fields >> extra) valid = false;
+                    for (int i = 0, j = 0; i < 9 && valid; ++i)
+                    {
+                        if (i == 3) continue;
+                        const char *end = tokens[i].data() + tokens[i].size();
+                        auto parsed = i == 2 ? std::from_chars(tokens[i].data(), end, ip)
+                                             : std::from_chars(tokens[i].data(), end, values[j++]);
+                        valid = parsed.ec == std::errc() && parsed.ptr == end;
+                    }
+                    const std::string &subnet = tokens[3];
+                    if (!valid || subnet.size() > 63)
                     {
                         reply(client_fd, "ERROR invalid_request\n");
                         break;
                     }
-
+                    int day = values[0], minute = values[1];
+                    int expected_day = values[2], expected_time = values[3];
+                    int check_day = values[4], check_time = values[5], check_subnet = values[6];
                     int result = -1, allowed = 0, debug = 0;
-                    ret = check_worktime(global_eid, &result, minute, &allowed, &debug);
-                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    ret = enclave_check_env(global_eid, &result, day, minute, ip,
+                                            subnet == "-" ? "" : subnet.c_str(),
+                                            expected_day, expected_time, check_day, check_time,
+                                            check_subnet, &allowed, &debug);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1 && result != 2))
                     {
                         std::cerr << "ECALL failed: transport=0x" << std::hex << ret
                                   << std::dec << ", application=" << result << '\n';
@@ -436,7 +456,9 @@ int main(int argc, char **argv)
                         healthy = false;
                     }
                     else if (result == 1)
-                        reply(client_fd, "ERROR invalid_time\n");
+                        reply(client_fd, "ERROR invalid_environment\n");
+                    else if (result == 2)
+                        reply(client_fd, "ERROR unsupported_check\n");
                     else if (debug != 1 || (allowed != 0 && allowed != 1))
                     {
                         reply(client_fd, "ERROR unexpected_enclave_result\n");

@@ -9,6 +9,16 @@ public final class CateeClientDriver
     {
         try
         {
+            if (args.length == 5 && args[1].equals("ENV"))
+            {
+                if (!args[3].equals("true") && !args[3].equals("false"))
+                    throw new IllegalArgumentException("Expected Boolean required");
+                CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[4]));
+                boolean matched = client.checkEnvironment(0, Integer.parseInt(args[2]), 0, "", false,
+                                                          Boolean.parseBoolean(args[3]), false, true, false);
+                System.out.println(matched ? "ALLOW HW DEBUG" : "DENY HW DEBUG");
+                return;
+            }
             if (args.length == 5 && args[1].equals("SET_TIMEWINDOW"))
             {
                 CateeClient client = new CateeClient(Path.of(args[0]), Integer.parseInt(args[4]));
