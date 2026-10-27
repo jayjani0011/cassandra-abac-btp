@@ -91,8 +91,8 @@ int main(int argc, char **argv)
     expect_check(enclave, longest, 1, 0);
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result == 0);
     int within = -1, debug = -1;
-    assert(check_worktime(enclave, &result, 630, &within, &debug) == SGX_SUCCESS && result == 0 && within == 1 && debug == 1);
-    assert(check_worktime(enclave, &result, 840, &within, &debug) == SGX_SUCCESS && result == 0 && within == 0);
+    assert(enclave_check_env(enclave, &result, 0, 630, 0, "", 0, 1, 0, 1, 0, &within, &debug) == SGX_SUCCESS && result == 0 && within == 1 && debug == 1);
+    assert(enclave_check_env(enclave, &result, 0, 840, 0, "", 0, 1, 0, 1, 0, &within, &debug) == SGX_SUCCESS && result == 0 && within == 0);
     expect_check(enclave, longest, 1, 1);
     expect_check(enclave, alice, UINT32_MAX, 0);
     assert(enclave_grant_admin_priv(enclave, &result, alice, 1) == SGX_SUCCESS && result != 0);
@@ -104,8 +104,8 @@ int main(int argc, char **argv)
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size) == SGX_SUCCESS && result != 0);
     expect_check(enclave, longest, 1, 1);
     assert(enclave_unseal_admin(enclave, &result, sealed.data(), sealed_size - 1) == SGX_SUCCESS && result != 0);
-    assert(check_worktime(enclave, &result, 630, &within, &debug) == SGX_SUCCESS && result == 0 && within == 1);
-    assert(check_worktime(enclave, &result, 840, &within, &debug) == SGX_SUCCESS && result == 0 && within == 0);
+    assert(enclave_check_env(enclave, &result, 0, 630, 0, "", 0, 1, 0, 1, 0, &within, &debug) == SGX_SUCCESS && result == 0 && within == 1);
+    assert(enclave_check_env(enclave, &result, 0, 840, 0, "", 0, 1, 0, 1, 0, &within, &debug) == SGX_SUCCESS && result == 0 && within == 0);
     assert(sgx_destroy_enclave(enclave) == SGX_SUCCESS);
     puts("Administrative ECALL hardware tests passed");
 }

@@ -1,7 +1,6 @@
 enclave {
     trusted {
         public int enclave_set_timewindow(int start_minute, int end_minute);
-        public int check_worktime(int minute, [out] int *allowed, [out] int *debug);
         public int enclave_grant_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask);
         public int enclave_revoke_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask);
         public int enclave_check_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask, [out] int *allowed);
@@ -10,5 +9,10 @@ enclave {
         public int enclave_get_sealed_size([out] uint32_t *sealed_size);
         public int enclave_seal_admin([out, size=sealed_size] uint8_t *sealed_data, uint32_t sealed_size);
         public int enclave_unseal_admin([in, size=sealed_size] const uint8_t *sealed_data, uint32_t sealed_size);
+        public int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
+                                     [in, string] const char *subnet_name,
+                                     int workday_value, int worktime_value,
+                                     int check_workday, int check_worktime, int check_subnet,
+                                     [out] int *allowed, [out] int *debug);
     };
 };

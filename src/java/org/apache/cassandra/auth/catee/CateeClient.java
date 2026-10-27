@@ -26,13 +26,26 @@ public final class CateeClient
         this.timeoutMillis = timeoutMillis;
     }
 
-    /** Returns the predicate result; errors throw instead of becoming a decision. */
+    /** Convenience predicate for callers requesting worktime=true; comparison stays in SGX. */
     public boolean checkWorktime(int minute) throws IOException
     {
-        if (minute < 0 || minute >= 1440)
-            throw new IllegalArgumentException("Minute must be between 0 and 1439");
+        return checkEnvironment(0, minute, 0, "", false, true, false, true, false);
+    }
 
-        return predicate(request("CHECK " + minute));
+    /** PATEE-style observations, expected values and required-check flags. */
+    public boolean checkEnvironment(int day, int minute, long clientIp, String subnet,
+                                    boolean expectedDay, boolean expectedTime,
+                                    boolean checkDay, boolean checkTime, boolean checkSubnet) throws IOException
+    {
+        if (day < 0 || day > 6 || minute < 0 || minute >= 1440
+            || clientIp < 0 || clientIp > 0xffffffffL || subnet == null
+            || subnet.length() > 63 || (!subnet.isEmpty() && !subnet.matches("[A-Za-z0-9_.-]+"))
+            || subnet.equals("-"))
+            throw new IllegalArgumentException("Invalid environmental observation");
+        return predicate(request("CHECK_ENV " + day + " " + minute + " " + clientIp + " "
+                                 + (subnet.isEmpty() ? "-" : subnet) + " "
+                                 + (expectedDay ? 1 : 0) + " " + (expectedTime ? 1 : 0) + " "
+                                 + (checkDay ? 1 : 0) + " " + (checkTime ? 1 : 0) + " " + (checkSubnet ? 1 : 0)));
     }
 
     public void setTimeWindow(int startMinute, int endMinute) throws IOException

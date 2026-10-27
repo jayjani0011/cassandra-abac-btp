@@ -37,7 +37,7 @@ class SealingTest(unittest.TestCase):
             if process.poll() is not None:
                 self.fail("Service failed to start")
             try:
-                if exchange(self.path, [b"CHECK 840\n"]) in (b"ALLOW HW DEBUG\n", b"DENY HW DEBUG\n"):
+                if exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]) in (b"ALLOW HW DEBUG\n", b"DENY HW DEBUG\n"):
                     return process
             except OSError:
                 time.sleep(0.05)
@@ -101,7 +101,7 @@ class SealingTest(unittest.TestCase):
     def test_same_state_cannot_have_two_service_writers(self):
         self.start(True)
         self.rejected_start(path=self.path.with_name("second.sock"))
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]))
 
     def test_failed_persistence_stops_service_without_acknowledging_grant(self):
         process = self.start(True)
@@ -241,8 +241,8 @@ class SealingTest(unittest.TestCase):
         self.seal_payload(self.payload(version=2, entries=[(b"alice", 0, 1), (b"bob", 3, 0)]))
         original = self.state.read_bytes()
         process = self.start()
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
-        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 0\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 1 0 1 0\n"]))
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
         self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
         self.assertEqual(original, self.state.read_bytes())
@@ -250,8 +250,8 @@ class SealingTest(unittest.TestCase):
         self.assertGreater(self.state.stat().st_size, len(original))
         self.stop(process)
         self.start()
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 630\n"]))
-        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]))
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
         self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
 
@@ -267,14 +267,14 @@ class SealingTest(unittest.TestCase):
         process = self.start()
         for minute in range(1440):
             expected = b"ALLOW HW DEBUG\n" if 600 <= minute < 660 else b"DENY HW DEBUG\n"
-            self.assertEqual(expected, exchange(self.path, [f"CHECK {minute}\n".encode()]), minute)
+            self.assertEqual(expected, exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]), minute)
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 2\n"]))
         self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
         self.assertEqual(b"OK HW DEBUG\n", self.lifecycle("FINISH"))
         self.stop(process)
         self.start()
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 630\n"]))
-        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]))
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 2\n"]))
 
     def test_failed_window_persistence_stops_service_and_restores_previous_window(self):
@@ -289,8 +289,8 @@ class SealingTest(unittest.TestCase):
         self.assertEqual("preserve", pending.read_text())
         pending.unlink()
         self.start()
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 630\n"]))
-        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK 750\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 750 0 - 0 1 0 1 0\n"]))
 
     def test_invalid_window_updates_do_not_reseal_or_modify_state(self):
         self.start(True)
@@ -300,7 +300,7 @@ class SealingTest(unittest.TestCase):
                         b"SET_TIMEWINDOW invalid 600\n"]:
             self.assertTrue(exchange(self.path, [request]).startswith(b"ERROR "))
             self.assertEqual(original, self.state.read_bytes())
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK 840\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]))
 
     def test_authenticated_invalid_payloads_rejected_without_reset(self):
         cases = [self.payload(version=4), self.payload(count=33),
