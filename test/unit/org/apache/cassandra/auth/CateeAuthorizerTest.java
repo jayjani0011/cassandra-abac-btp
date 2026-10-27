@@ -44,11 +44,11 @@ public class CateeAuthorizerTest extends CQLTester
         int checks;
 
         boolean isCateeEnabled() { return enabled; }
-        boolean checkCateeWorktime() throws IOException
+        boolean checkCateeEnvironment(Map<String, String> conditions) throws IOException
         {
             checks++;
             if (worktime == null) throw new IOException("Test service unavailable");
-            return worktime;
+            return worktime == Boolean.parseBoolean(conditions.get("worktime"));
         }
     }
 
@@ -136,13 +136,13 @@ public class CateeAuthorizerTest extends CQLTester
     }
 
     @Test
-    public void reusesWorktimeAcrossRules()
+    public void checksExpectedValueForEachRule()
     {
         TestAuthorizer authorizer = authorizer();
         rule("one", "GRANT", Map.of("worktime", "true"));
         rule("two", "GRANT", Map.of("worktime", "false"));
         authorizer.authorize(USER, RESOURCE);
-        assertEquals(1, authorizer.checks);
+        assertEquals(2, authorizer.checks);
     }
 
     @Test
@@ -225,6 +225,11 @@ public class CateeAuthorizerTest extends CQLTester
             assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
             rule("hardware", "GRANT", Map.of("worktime", Boolean.toString(!Boolean.parseBoolean(actual))));
             assertTrue(authorizer.authorize(USER, RESOURCE).isEmpty());
+            // Unsupported protected conditions must not fall back to ordinary providers.
+            rule("hardware", "GRANT", Map.of("workday", "true"));
+            assertUnauthorized(() -> authorizer.authorize(USER, RESOURCE));
+            rule("hardware", "GRANT", Map.of("subnet", "campus"));
+            assertUnauthorized(() -> authorizer.authorize(USER, RESOURCE));
             rule("hardware", "GRANT", Map.of("worktime", actual));
             grantRbac();
             cache = testCache(authorizer);

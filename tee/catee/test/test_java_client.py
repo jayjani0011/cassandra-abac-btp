@@ -41,6 +41,17 @@ class JavaHardwareTest(HardwareBase):
         finally:
             self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
 
+    def test_java_passes_expected_value_to_enclave(self):
+        for minute in [539, 540, 1019, 1020]:
+            for expected in [False, True]:
+                result = subprocess.run(["java", "-cp", f"{ROOT}/build/java:{ROOT}/build/java-deps/*",
+                                         "org.apache.cassandra.auth.catee.CateeClientDriver", str(self.path),
+                                         "ENV", str(minute), str(expected).lower(), "2000"],
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(0, result.returncode, result.stderr)
+                matched = expected == (540 <= minute < 1020)
+                self.assertEqual("ALLOW HW DEBUG\n" if matched else "DENY HW DEBUG\n", result.stdout)
+
     def test_java_worktime_boundaries(self):
         for minute, expected in [(0, "DENY"), (539, "DENY"), (540, "ALLOW"),
                                  (840, "ALLOW"), (1019, "ALLOW"), (1020, "DENY"),
@@ -98,7 +109,7 @@ class JavaFailureTest(unittest.TestCase):
                                     if not chunk:
                                         raise RuntimeError("Missing Java request")
                                     request.extend(chunk)
-                                expected_request = b"SET_TIMEWINDOW 600 660\n" if setting else b"CHECK 840\n"
+                                expected_request = b"SET_TIMEWINDOW 600 660\n" if setting else b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"
                                 if request != expected_request:
                                     raise RuntimeError("Incorrect Java request")
                                 if response is None:
