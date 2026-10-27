@@ -1,5 +1,7 @@
 enclave {
     trusted {
+        public int enclave_set_subnet([in, string] const char *name, uint32_t network, uint32_t prefix);
+        public int enclave_subnet_exists([in, string] const char *name, [out] int *exists);
         public int enclave_set_workday([in, count=7] const uint8_t *days);
         public int enclave_set_timewindow(int start_minute, int end_minute);
         public int enclave_grant_admin_priv([in, count=256] const char *role_name, uint32_t priv_mask);

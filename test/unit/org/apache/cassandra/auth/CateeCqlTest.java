@@ -189,6 +189,84 @@ public class CateeCqlTest extends CateeCqlTestSupport
         useUser("catee_reader", "test-password");
     }
 
+    private void checkSubnetAndLoadThroughCql(boolean originalExpected) throws Throwable
+    {
+        useSuperUser();
+        long originalLimit = DatabaseDescriptor.getNativeTransportMaxConcurrentConnections();
+        try
+        {
+            DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(2000);
+            executeNet("SET ENV_ATTRIBUTE subnet = campus='127.0.0.1/32'");
+            String today = java.time.LocalDate.now().getDayOfWeek().toString().toLowerCase(java.util.Locale.ROOT);
+            executeNet("SET ENV_ATTRIBUTE workday = " + today);
+            executeNet("DROP RULE catee_worktime");
+            String rulePrefix = "CREATE RULE catee_worktime FOR SELECT OF USER ATTRIBUTE {'catee_subject':'reader'} " +
+                                "AND RESOURCE ATTRIBUTE {'catee_table':'target'} AND ENVIRONMENT ATTRIBUTE ";
+            assertInvalidMessageNet("Unknown subnet", rulePrefix + "{'subnet':'missing'} WITH EFFECT (GRANT)");
+            for (String bad : new String[] {"NaN", "Infinity", "-0.1", "1.1"})
+                assertInvalidMessageNet("server_load must be", rulePrefix + "{'server_load':'" + bad + "'} WITH EFFECT (GRANT)");
+            executeNet(rulePrefix + "{'workday':'true','worktime':'" + originalExpected +
+                       "','subnet':'campus','server_load':'1'} WITH EFFECT (GRANT)");
+            Map<String,String> all = Map.of("workday", "true", "worktime", Boolean.toString(originalExpected),
+                                           "subnet", "campus", "server_load", "1");
+            useUser("catee_reader", "test-password");
+            assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+            assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE subnet = campus='0.0.0.0/0'");
+            useSuperUser();
+            executeNet("SET ENV_ATTRIBUTE subnet = campus='192.0.2.0/24'");
+            useUser("catee_reader", "test-password");
+            assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
+            useSuperUser();
+            restartService();
+            useUser("catee_reader", "test-password");
+            assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
+            useSuperUser();
+            executeNet("SET ENV_ATTRIBUTE subnet = campus='127.0.0.1/32'");
+            Map<String,String> loaded = new java.util.HashMap<>(all);
+            loaded.put("server_load", "0");
+            QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?", loaded, "catee_worktime");
+            useUser("catee_reader", "test-password");
+            assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
+            QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?", all, "catee_worktime");
+            assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+            DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(-1);
+            assertInvalidMessageNet("Unable to complete CATEE authorization", "SELECT id FROM %s");
+            DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(2000);
+            useSuperUser();
+            Path stateFile = Path.of(socket.toString() + ".sealed");
+            Path pendingFile = Path.of(socket.toString() + ".sealed.tmp");
+            byte[] acknowledged = Files.readAllBytes(stateFile);
+            Files.writeString(pendingFile, "preserve", java.nio.file.StandardOpenOption.CREATE_NEW);
+            try
+            {
+                assertInvalidMessageNet("Required CATEE subnet update failed", "SET ENV_ATTRIBUTE subnet = campus='192.0.2.0/24'");
+                assertTrue(service.waitFor(3, TimeUnit.SECONDS));
+                org.junit.Assert.assertNotEquals(0, service.exitValue());
+                org.junit.Assert.assertArrayEquals(acknowledged, Files.readAllBytes(stateFile));
+            }
+            finally { Files.deleteIfExists(pendingFile); }
+            useUser("catee_reader", "test-password");
+            assertInvalidMessageNet("Unable to complete CATEE authorization", "SELECT id FROM %s");
+            QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                           Map.of("server_load", "1"), "catee_worktime");
+            assertRowsNet(executeNet("SELECT id FROM %s"), row(1)); // No SGX needed for load alone.
+            useSuperUser();
+            restartService();
+            QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?", all, "catee_worktime");
+            useUser("catee_reader", "test-password");
+            assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        }
+        finally
+        {
+            DatabaseDescriptor.setNativeTransportMaxConcurrentConnections(originalLimit);
+            useSuperUser();
+            executeNet("SET ENV_ATTRIBUTE workday = monday,tuesday,wednesday,thursday,friday");
+            QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                           Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
+            useUser("catee_reader", "test-password");
+        }
+    }
+
     @Test
     public void cqlUsesEnclaveAndDoesNotReuseStalePermissions() throws Throwable
     {
@@ -273,6 +351,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
         assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
         checkWindowConfigurationThroughCql(within);
         checkWorkdayConfigurationThroughCql(within);
+        checkSubnetAndLoadThroughCql(within);
         QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
                                        Map.of("worktime", Boolean.toString(!within)), "catee_worktime");
         assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");

@@ -134,8 +134,8 @@ class HardwareServiceTest(unittest.TestCase):
                 self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n", response)
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 0 0 0 0\n"]))
         for flags in ["0 0 1", "1 1 1"]:
-            self.assertEqual(b"ERROR unsupported_check\n",
-                             exchange(self.path, [f"CHECK_ENV 0 840 0 named 1 1 {flags}\n".encode()]))
+            self.assertEqual(b"DENY HW DEBUG\n",
+                             exchange(self.path, [f"CHECK_ENV 0 840 0 6e616d6564 1 1 {flags}\n".encode()]))
         for fields in ["7 840 0 - 0 1 0 1 0", "0 -1 0 - 0 1 0 1 0",
                        "0 1440 0 - 0 1 0 1 0", "0 840 0 - 0 2 0 1 0",
                        "0 840 0 - 0 1 0 2 0"]:
@@ -159,6 +159,32 @@ class HardwareServiceTest(unittest.TestCase):
             self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 1 840 0 - 0 1 1 0 0\n"]))
         finally:
             self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_WORKDAY 0 1 1 1 1 1 0\n"]))
+
+    def test_subnet_configuration_and_boundaries(self):
+        name = "campus space".encode().hex()
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [f"SUBNET_EXISTS {name}\n".encode()]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_SUBNET {name} 167772160 8\n".encode()]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [f"SUBNET_EXISTS {name}\n".encode()]))
+        for ip, matched in [(167772159,False),(167772160,True),(184549375,True),(184549376,False)]:
+            self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n",
+                             exchange(self.path, [f"CHECK_ENV 1 840 {ip} {name} 1 1 1 1 1\n".encode()]))
+        for request in [f"SET_SUBNET {name} 1 0\n", f"SET_SUBNET {name} 0 33\n",
+                        "SET_SUBNET zz 0 0\n", "SET_SUBNET 00 0 0\n", "SUBNET_EXISTS 61 extra\n"]:
+            self.assertTrue(exchange(self.path, [request.encode()]).startswith(b"ERROR "))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_SUBNET {name} 0 0\n".encode()]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [f"CHECK_ENV 1 840 4294967295 {name} 0 0 0 0 1\n".encode()]))
+
+    def test_z_subnet_capacity_and_updates(self):
+        # Earlier tests may have one named subnet; fill until capacity rejects.
+        inserted = []
+        for i in range(33):
+            name = f"capacity{i}".encode().hex()
+            response = exchange(self.path, [f"SET_SUBNET {name} 0 0\n".encode()])
+            if response.startswith(b"ERROR "): break
+            inserted.append(name)
+        self.assertTrue(inserted)
+        self.assertLess(len(inserted),33)
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_SUBNET {inserted[0]} 2130706433 32\n".encode()]))
 
     def test_fragmented_request(self):
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CH", b"ECK_ENV ", b"0 840 0 - 0 1 0 1 0", b"\n"]))

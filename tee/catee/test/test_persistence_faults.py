@@ -40,7 +40,7 @@ class PersistenceFaultTest(unittest.TestCase):
         process = fixture.start(environment=environment)
         commands = dict(grant=b"GRANT_ADMIN_PRIV 616c696365 2", revoke=b"REVOKE_ADMIN_PRIV 616c696365 1",
                         begin=b"BEGIN_ROLE_DELETE 616c696365", finish=b"FINISH_ROLE_DELETE 616c696365",
-                        window=b"SET_TIMEWINDOW 720 780", workday=b"SET_WORKDAY 1 0 0 0 0 0 1")
+                        window=b"SET_TIMEWINDOW 720 780", workday=b"SET_WORKDAY 1 0 0 0 0 0 1", subnet=b"SET_SUBNET 63616d707573 167772160 8")
         if fault.startswith("crash_"):
             with self.assertRaises((OSError, RuntimeError)):
                 request(commands[operation])
@@ -63,6 +63,9 @@ class PersistenceFaultTest(unittest.TestCase):
         new_window = operation == "window" and replaced
         self.assertEqual(b"DENY HW DEBUG\n" if new_window else b"ALLOW HW DEBUG\n", request(b"CHECK_ENV 0 630 0 - 0 1 0 1 0"))
         self.assertEqual(b"ALLOW HW DEBUG\n" if new_window else b"DENY HW DEBUG\n", request(b"CHECK_ENV 0 750 0 - 0 1 0 1 0"))
+        new_subnet = operation == "subnet" and replaced
+        self.assertEqual(b"ALLOW HW DEBUG\n" if new_subnet else b"DENY HW DEBUG\n",
+                         request(b"CHECK_ENV 0 630 167772161 63616d707573 0 0 0 0 1"))
         new_days = operation == "workday" and replaced
         self.assertEqual(b"ALLOW HW DEBUG\n" if new_days else b"DENY HW DEBUG\n",
                          request(b"CHECK_ENV 0 630 0 - 1 1 1 0 0"))
@@ -84,13 +87,13 @@ class PersistenceFaultTest(unittest.TestCase):
 
     def test_io_errors_never_acknowledge_unpersisted_mutations(self):
         for fault in ["partial_write", "file_fsync", "file_close", "rename", "directory_fsync", "directory_close"]:
-            for operation in ["grant", "revoke", "begin", "finish", "window", "workday"]:
+            for operation in ["grant", "revoke", "begin", "finish", "window", "workday", "subnet"]:
                 with self.subTest(fault=fault, operation=operation):
                     self.exercise(fault, operation)
 
     def test_abrupt_exits_leave_a_valid_old_or_replaced_snapshot(self):
         for fault in ["crash_after_file_fsync", "crash_after_rename", "crash_after_directory_fsync"]:
-            for operation in ["grant", "revoke", "begin", "finish", "window", "workday"]:
+            for operation in ["grant", "revoke", "begin", "finish", "window", "workday", "subnet"]:
                 with self.subTest(fault=fault, operation=operation):
                     self.exercise(fault, operation)
 
