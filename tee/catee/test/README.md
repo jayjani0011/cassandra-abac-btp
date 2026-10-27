@@ -21,8 +21,8 @@ the test data directory. Do not run another Ant test job at the same time.
 | Administration and role lifecycle | Supported commands, direct grants, validation, ordering, failures at each cleanup stage, retries, recreation and concurrent mutations |
 | Sequential hardware CQL | Real Cassandra requests through IPC/ECALLs, configuration affecting data access, restart persistence, failed saves, existing sessions and service failure |
 | Concurrent hardware CQL | Eight independent authenticated sessions; 2,400 reads over allow/revoke/regrant phases; 320 concurrent administrative updates; abrupt service death and recovery |
-| Sealed state | Versions 1/2/3, grant/marker/window restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
-| Persistence fault injection | All five mutable operations at nine named host I/O/error/exit boundaries (45 subcases) |
+| Sealed state | Versions 1/2/3/4, grant/marker/window/workday restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
+| Persistence fault injection | All six mutable operations at nine named host I/O/error/exit boundaries (54 subcases) |
 | Evaluation tooling | Bad/missing samples, statistical fixtures, smoke labeling, CSV/image export, overwrite refusal and historical-output protection |
 | Benchmark smoke | One native/SGX pair with tiny batches, followed by analysis; all generated output is validation-only and isolated |
 
@@ -43,7 +43,7 @@ never into Cassandra or the production enclave. It acts only on the explicit
 - Parent-directory fsync and close errors.
 - Abrupt process exit after file fsync, rename, or directory fsync.
 
-Each boundary is exercised for grant, revoke, BEGIN, FINISH and window updates.
+Each boundary is exercised for grant, revoke, BEGIN, FINISH, window and working-day updates.
 Tests reject false success, verify whether replacement occurred, and restart from
 the actual saved snapshot. They check the relevant permissions/marker/window and
 unrelated grants. Leftover temporary files are never promoted automatically.
@@ -64,5 +64,6 @@ load testing.
 Environmental checks use PATEE-style observations, expectations and required-check
 flags. Direct hardware ECALL, socket, Java and authorizer tests cover expected
 true/false, per-rule evaluation, invalid inputs and fail-closed rejection of
-working-day/subnet checks until their implementation. The old CHECK wire command
+subnet checks until their implementation. Working-day tests cover all 128
+selections, combined day/time conditions, CQL configuration and sealed restoration. The old CHECK wire command
 is replaced by CHECK_ENV; persistence and benchmark readiness probes use it too.

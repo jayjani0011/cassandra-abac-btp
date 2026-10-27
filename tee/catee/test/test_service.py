@@ -133,7 +133,7 @@ class HardwareServiceTest(unittest.TestCase):
                 response = exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 {expected} 0 1 0\n".encode()])
                 self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n", response)
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 0 0 0 0\n"]))
-        for flags in ["1 0 0", "0 0 1", "1 1 1"]:
+        for flags in ["0 0 1", "1 1 1"]:
             self.assertEqual(b"ERROR unsupported_check\n",
                              exchange(self.path, [f"CHECK_ENV 0 840 0 named 1 1 {flags}\n".encode()]))
         for fields in ["7 840 0 - 0 1 0 1 0", "0 -1 0 - 0 1 0 1 0",
@@ -142,6 +142,23 @@ class HardwareServiceTest(unittest.TestCase):
             self.assertEqual(b"ERROR invalid_environment\n",
                              exchange(self.path, [f"CHECK_ENV {fields}\n".encode()]))
         self.assertTrue(check_time(str(self.path), "14:00"))
+
+    def test_workday_configuration_and_combined_checks(self):
+        try:
+            for mask in ["0 1 1 1 1 1 0", "1 0 0 0 0 0 1", "1 1 1 1 1 1 1", "0 0 0 0 0 0 0"]:
+                self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_WORKDAY {mask}\n".encode()]))
+                for day, selected in enumerate(map(int, mask.split())):
+                    for expected in [0, 1]:
+                        for minute in [0, 840]:
+                            matched = expected == selected and minute == 840
+                            self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n",
+                                             exchange(self.path, [f"CHECK_ENV {day} {minute} 0 - {expected} 1 1 1 0\n".encode()]))
+            for request in [b"SET_WORKDAY 1 1 1 1 1 1\n", b"SET_WORKDAY 1 1 1 1 1 1 2\n",
+                            b"SET_WORKDAY 1 1 1 1 1 1 1 extra\n", b"SET_WORKDAY -1 0 0 0 0 0 0\n"]:
+                self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]))
+            self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 1 840 0 - 0 1 1 0 0\n"]))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_WORKDAY 0 1 1 1 1 1 0\n"]))
 
     def test_fragmented_request(self):
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CH", b"ECK_ENV ", b"0 840 0 - 0 1 0 1 0", b"\n"]))

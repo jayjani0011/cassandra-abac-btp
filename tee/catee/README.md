@@ -174,8 +174,7 @@ The enclave compares the observation with the expectation and returns a rule mat
 Cassandra does not compare or reuse an enclave Boolean across rules.
 
 The common interface carries day, minute, IPv4 address, subnet name, expected
-working-day/time values and three check flags. Only working time is implemented
-currently. Enabling working-day or subnet checks returns an explicit error; those
+working-day/time values and three check flags. Working day and working time are implemented. Enabling subnet checks returns an explicit error; those
 conditions never fall back to ordinary providers in CATEE mode. Client IP is a
 placeholder until subnet observation and evaluation are implemented.
 
@@ -284,11 +283,12 @@ slot; a full 32-entry table rejects it without changing state.
 
 Successful operations use the same seal/write/fsync/rename/directory-fsync path as
 admin updates. Persistence failure returns ERROR and stops the service. The new
-version-3 sealed state includes the working-hours window, grants and deletion
-markers. Versions 1 and 2 restore their existing grants/markers and use the
-09:00–17:00 default window, because those files never contained a window. The
-next successful mutation writes version 3. Keep the same development signing key
-and compatible SGX sealing identity. Older binaries cannot read version 3; do not
+version-4 sealed state includes working days, the working-hours window, grants
+and deletion markers. Versions 1 and 2 restore their existing grants/markers and
+use the 09:00–17:00 default window. Version 3 preserves its window too. Versions
+1–3 receive Monday–Friday working days; the next successful mutation writes
+version 4. Keep the same development signing key and compatible SGX sealing
+identity. Older binaries cannot read version 4; do not
 downgrade them onto updated state.
 The `--init` option is never a migration or recovery mechanism.
 
@@ -560,3 +560,15 @@ IPv4 integer, and 0/1 Boolean fields. `-` denotes no subnet. For example,
 The existing exclusive end boundary and default 09:00–17:00 window are unchanged.
 `CateeClient.checkWorktime` remains a convenience wrapper requesting expected=true;
 it uses this same common ECALL, not an observation-only enclave operation.
+
+## Working-day configuration
+
+Following PATEE, configure a named set with
+`SET ENV_ATTRIBUTE workday = monday,tuesday,wednesday,thursday,friday;`.
+The enclave stores seven 0/1 values indexed Sunday=0 through Saturday=6, defaults
+to Monday-Friday, and compares the supplied day with the rule's expected Boolean.
+Day and time checks are combined in one ECALL. Duplicate day names are harmless;
+unknown names are rejected before sending. Configuration remains superuser-only.
+`SET_WORKDAY <sun> <mon> <tue> <wed> <thu> <fri> <sat>` uses seven 0/1 fields.
+Subnet evaluation remains unsupported. Working days are sealed together with grants, deletion markers and the time window.
+Version 4 adds the day bitmap; versions 1–3 restore Monday–Friday by default.

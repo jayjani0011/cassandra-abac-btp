@@ -9,6 +9,14 @@ public final class CateeClientDriver
     {
         try
         {
+            if (args.length == 4 && args[1].equals("SET_WORKDAY"))
+            {
+                byte[] days = new byte[args[2].length()];
+                for (int i = 0; i < days.length; ++i) days[i] = (byte) (args[2].charAt(i) - '0');
+                new CateeClient(Path.of(args[0]), Integer.parseInt(args[3])).setWorkdays(days);
+                System.out.println("OK HW DEBUG");
+                return;
+            }
             if (args.length == 5 && args[1].equals("ENV"))
             {
                 if (!args[3].equals("true") && !args[3].equals("false"))

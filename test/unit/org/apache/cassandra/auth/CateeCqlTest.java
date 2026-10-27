@@ -91,7 +91,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
             assertTrue(client.checkWorktime(630));
             org.junit.Assert.assertFalse(client.checkWorktime(840));
         }
-        assertInvalidMessageNet("Unsupported CATEE", "SET ENV_ATTRIBUTE workday = 9,0,17,0");
+        assertInvalidMessageNet("Invalid workday", "SET ENV_ATTRIBUTE workday = 9,0,17,0");
         useUser("catee_reader", "test-password");
         assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE worktime = 9,0,17,0");
         assertTrue(client.checkWorktime(630));
@@ -139,6 +139,54 @@ public class CateeCqlTest extends CateeCqlTestSupport
                                        Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
         useUser("catee_reader", "test-password");
         assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+    }
+
+    private void checkWorkdayConfigurationThroughCql(boolean originalExpected) throws Throwable
+    {
+        useSuperUser();
+        String[] days = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
+        int day = java.time.LocalDate.now().getDayOfWeek().getValue() % 7;
+        executeNet("SET ENV_ATTRIBUTE workday = " + days[day]);
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("workday", "true", "worktime", Boolean.toString(originalExpected)), "catee_worktime");
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE workday = monday");
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE workday = " + days[(day + 1) % 7]);
+        useUser("catee_reader", "test-password");
+        assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
+        useSuperUser();
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("workday", "false", "worktime", Boolean.toString(originalExpected)), "catee_worktime");
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        restartService();
+        assertInvalidMessageNet("Invalid workday", "SET ENV_ATTRIBUTE workday = funday");
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        Path stateFile = Path.of(socket.toString() + ".sealed");
+        Path pendingFile = Path.of(socket.toString() + ".sealed.tmp");
+        byte[] acknowledged = Files.readAllBytes(stateFile);
+        Files.writeString(pendingFile, "preserve", java.nio.file.StandardOpenOption.CREATE_NEW);
+        try
+        {
+            assertInvalidMessageNet("Required CATEE workday update failed", "SET ENV_ATTRIBUTE workday = " + days[day]);
+            assertTrue(service.waitFor(3, TimeUnit.SECONDS));
+            org.junit.Assert.assertNotEquals(0, service.exitValue());
+            org.junit.Assert.assertArrayEquals(acknowledged, Files.readAllBytes(stateFile));
+        }
+        finally { Files.deleteIfExists(pendingFile); }
+        restartService();
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE workday = monday,tuesday,wednesday,thursday,friday");
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
+        useUser("catee_reader", "test-password");
     }
 
     @Test
@@ -224,6 +272,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
         useUser("catee_reader", "test-password");
         assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
         checkWindowConfigurationThroughCql(within);
+        checkWorkdayConfigurationThroughCql(within);
         QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
                                        Map.of("worktime", Boolean.toString(!within)), "catee_worktime");
         assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
