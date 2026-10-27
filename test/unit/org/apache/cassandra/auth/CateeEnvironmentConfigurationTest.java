@@ -29,6 +29,13 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
     private static class ConfigurationAuthorizer extends CassandraAuthorizer
     {
         int calls, start, end, failure;
+        byte[] days;
+        public void setCateeWorkdays(byte[] values) throws IOException
+        {
+            calls++;
+            if (failure != 0) throw new IOException("Service unavailable");
+            days = values.clone();
+        }
         public void setCateeTimeWindow(int startMinute, int endMinute) throws IOException
         {
             calls++;
@@ -100,7 +107,7 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
     @Test
     public void rejectsUnsupportedAttributesAndMalformedSyntax()
     {
-        try { parse("SET ENV_ATTRIBUTE workday = 9,0,17,0").execute(state); fail(); }
+        try { parse("SET ENV_ATTRIBUTE subnet = 9,0,17,0").execute(state); fail(); }
         catch (InvalidRequestException expected) { assertTrue(expected.getMessage().contains("Unsupported")); }
         for (String query : new String[] {"SET ENV_ATTRIBUTE worktime = 9,0,17",
                                           "SET ENV_ATTRIBUTE worktime = 9,0,17,0,1",
@@ -112,6 +119,46 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
             catch (SyntaxException expected) { }
         }
         assertEquals(0, authorizer.calls);
+    }
+
+    @Test
+    public void configuresNamedWorkingDaysAndRejectsInvalidNames()
+    {
+        parse("SET ENV_ATTRIBUTE workday = monday,tuesday,wednesday,thursday,friday").execute(state);
+        assertArrayEquals(new byte[] {0,1,1,1,1,1,0}, authorizer.days);
+        parse("set env_attribute workday = SUNDAY,saturday,sunday").execute(state);
+        assertArrayEquals(new byte[] {1,0,0,0,0,0,1}, authorizer.days);
+        for (String value : new String[] {"funday", "9,0,17,0"})
+        {
+            try { parse("SET ENV_ATTRIBUTE workday = " + value).execute(state); fail(value); }
+            catch (InvalidRequestException expected) { }
+        }
+        assertEquals(2, authorizer.calls);
+    }
+
+    @Test
+    public void workdayAuthorizationDisabledModeAndTransportFailure()
+    {
+        when(state.isSuper()).thenReturn(false);
+        try { parse("SET ENV_ATTRIBUTE workday = monday").execute(state); fail(); }
+        catch (UnauthorizedException expected) { }
+        when(state.isSuper()).thenReturn(true);
+        authorizer.failure = 1;
+        try { parse("SET ENV_ATTRIBUTE workday = monday").execute(state); fail(); }
+        catch (InvalidRequestException expected) { assertTrue(expected.getMessage().contains("workday update failed")); }
+        String previousSocket = CassandraRelevantProperties.CATEE_SOCKET.getString();
+        try
+        {
+            CassandraRelevantProperties.CATEE_SOCKET.clearValue();
+            DatabaseDescriptor.setAuthorizer(new CassandraAuthorizer());
+            try { parse("SET ENV_ATTRIBUTE workday = monday").execute(state); fail(); }
+            catch (InvalidRequestException expected) { assertTrue(expected.getMessage().contains("not enabled")); }
+        }
+        finally
+        {
+            if (previousSocket == null) CassandraRelevantProperties.CATEE_SOCKET.clearValue();
+            else CassandraRelevantProperties.CATEE_SOCKET.setString(previousSocket);
+        }
     }
 
     @Test

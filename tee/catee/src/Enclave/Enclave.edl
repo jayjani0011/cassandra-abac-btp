@@ -1,5 +1,6 @@
 enclave {
     trusted {
+        public int enclave_set_workday([in, count=7] const uint8_t *days);
         public int enclave_set_timewindow(int start_minute, int end_minute);
         public int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
                                      [in, string] const char *subnet_name,

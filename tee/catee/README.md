@@ -170,8 +170,7 @@ The enclave compares the observation with the expectation and returns a rule mat
 Cassandra does not compare or reuse an enclave Boolean across rules.
 
 The common interface carries day, minute, IPv4 address, subnet name, expected
-working-day/time values and three check flags. Only working time is implemented
-currently. Enabling working-day or subnet checks returns an explicit error; those
+working-day/time values and three check flags. Working day and working time are implemented. Enabling subnet checks returns an explicit error; those
 conditions never fall back to ordinary providers in CATEE mode. Client IP is a
 placeholder until subnet observation and evaluation are implemented.
 
@@ -232,3 +231,14 @@ IPv4 integer, and 0/1 Boolean fields. `-` denotes no subnet. For example,
 The existing exclusive end boundary and default 09:00–17:00 window are unchanged.
 `CateeClient.checkWorktime` remains a convenience wrapper requesting expected=true;
 it uses this same common ECALL, not an observation-only enclave operation.
+
+## Working-day configuration
+
+Following PATEE, configure a named set with
+`SET ENV_ATTRIBUTE workday = monday,tuesday,wednesday,thursday,friday;`.
+The enclave stores seven 0/1 values indexed Sunday=0 through Saturday=6, defaults
+to Monday-Friday, and compares the supplied day with the rule's expected Boolean.
+Day and time checks are combined in one ECALL. Duplicate day names are harmless;
+unknown names are rejected before sending. Configuration remains superuser-only.
+`SET_WORKDAY <sun> <mon> <tue> <wed> <thu> <fri> <sat>` uses seven 0/1 fields.
+Subnet evaluation remains unsupported. Sealing is added in catee/administration.

@@ -107,6 +107,13 @@ public class CassandraAuthorizer implements IAuthorizer
                                            conditions.containsKey("subnet"));
     }
 
+    public void setCateeWorkdays(byte[] days) throws IOException
+    {
+        if (!isCateeEnabled())
+            throw new InvalidRequestException("CATEE is not enabled");
+        cateeClient.setWorkdays(days);
+    }
+
     public void setCateeTimeWindow(int startMinute, int endMinute) throws IOException
     {
         if (!isCateeEnabled())

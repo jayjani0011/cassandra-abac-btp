@@ -48,6 +48,20 @@ public final class CateeClient
                                  + (checkDay ? 1 : 0) + " " + (checkTime ? 1 : 0) + " " + (checkSubnet ? 1 : 0)));
     }
 
+    public void setWorkdays(byte[] days) throws IOException
+    {
+        if (days == null || days.length != 7)
+            throw new IllegalArgumentException("Seven workday values are required");
+        StringBuilder request = new StringBuilder("SET_WORKDAY");
+        for (byte day : days)
+        {
+            if (day != 0 && day != 1) throw new IllegalArgumentException("Workday values must be 0 or 1");
+            request.append(' ').append(day);
+        }
+        if (!request(request.toString()).equals("OK HW DEBUG"))
+            throw new IOException("CATEE returned an error or invalid response");
+    }
+
     public void setTimeWindow(int startMinute, int endMinute) throws IOException
     {
         if (startMinute < 0 || startMinute >= endMinute || endMinute >= 1440)
