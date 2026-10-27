@@ -23,7 +23,7 @@ int main(int argc, char **argv)
     assert(result == 0 && allowed == 1);
     assert(enclave_check_env(enclave, &result, 0, 840, 0, "", 1, 1,
                              1, 1, 0, &allowed, &debug) == SGX_SUCCESS);
-    assert(result == 2 && allowed == 0);
+    assert(result == 0 && allowed == 0);
     assert(enclave_check_env(enclave, &result, 0, 840, 0, "campus", 0, 1,
                              0, 1, 1, &allowed, &debug) == SGX_SUCCESS);
     assert(result == 2 && allowed == 0);
@@ -36,5 +36,23 @@ int main(int argc, char **argv)
     assert(enclave_check_env(enclave, &result, 0, 840, 0, "", 0, 2,
                              0, 1, 0, &allowed, &debug) == SGX_SUCCESS);
     assert(result == 1 && allowed == 0);
+    for (int mask = 0; mask < 128; ++mask)
+    {
+        uint8_t days[7]{};
+        for (int day = 0; day < 7; ++day) days[day] = (mask >> day) & 1;
+        assert(enclave_set_workday(enclave, &result, days) == SGX_SUCCESS && result == 0);
+        for (int day = 0; day < 7; ++day)
+            for (int expected : {0, 1})
+                for (int minute : {0, 840})
+                {
+                    assert(enclave_check_env(enclave, &result, day, minute, 0, "", expected, 1,
+                                             1, 1, 0, &allowed, &debug) == SGX_SUCCESS);
+                    assert(result == 0 && allowed == ((expected == days[day]) && minute == 840));
+                }
+    }
+    uint8_t invalid[7]{0, 0, 0, 0, 0, 0, 2};
+    assert(enclave_set_workday(enclave, &result, invalid) == SGX_SUCCESS && result == 1);
+    assert(enclave_check_env(enclave, &result, 6, 840, 0, "", 1, 1,
+                             1, 0, 0, &allowed, &debug) == SGX_SUCCESS && result == 0 && allowed == 1);
     assert(sgx_destroy_enclave(enclave) == SGX_SUCCESS);
 }

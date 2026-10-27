@@ -225,9 +225,13 @@ public class CateeAuthorizerTest extends CQLTester
             assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
             rule("hardware", "GRANT", Map.of("worktime", Boolean.toString(!Boolean.parseBoolean(actual))));
             assertTrue(authorizer.authorize(USER, RESOURCE).isEmpty());
-            // Unsupported protected conditions must not fall back to ordinary providers.
-            rule("hardware", "GRANT", Map.of("workday", "true"));
-            assertUnauthorized(() -> authorizer.authorize(USER, RESOURCE));
+            // The expected day and time are compared together inside SGX.
+            String workingDay = Boolean.toString(java.time.LocalDate.now().getDayOfWeek().getValue() <= 5);
+            rule("hardware", "GRANT", Map.of("workday", workingDay, "worktime", actual));
+            assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
+            rule("hardware", "GRANT", Map.of("workday", Boolean.toString(!Boolean.parseBoolean(workingDay))));
+            assertTrue(authorizer.authorize(USER, RESOURCE).isEmpty());
+            // Unsupported subnet checks must not fall back to ordinary providers.
             rule("hardware", "GRANT", Map.of("subnet", "campus"));
             assertUnauthorized(() -> authorizer.authorize(USER, RESOURCE));
             rule("hardware", "GRANT", Map.of("worktime", actual));

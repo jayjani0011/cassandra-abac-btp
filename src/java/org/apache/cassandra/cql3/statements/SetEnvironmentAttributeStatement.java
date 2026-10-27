@@ -12,7 +12,7 @@ import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
-/** PATEE-style environmental configuration; currently supports working hours. */
+/** PATEE-style environmental configuration; supports working days and hours. */
 public final class SetEnvironmentAttributeStatement extends AuthenticationStatement
 {
     private final String attribute;
@@ -34,7 +34,23 @@ public final class SetEnvironmentAttributeStatement extends AuthenticationStatem
     public void validate(ClientState state)
     {
         state.ensureNotAnonymous();
-        window();
+        if ("workday".equals(attribute)) workdays();
+        else window();
+    }
+
+    private byte[] workdays()
+    {
+        String[] names = {"sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"};
+        byte[] selected = new byte[7];
+        if (values.length == 0)
+            throw new InvalidRequestException("workday requires at least one day");
+        for (String value : values)
+        {
+            int day = java.util.Arrays.asList(names).indexOf(value);
+            if (day < 0) throw new InvalidRequestException("Invalid workday: " + value);
+            selected[day] = 1;
+        }
+        return selected;
     }
 
     private int[] window()
@@ -65,18 +81,20 @@ public final class SetEnvironmentAttributeStatement extends AuthenticationStatem
     public ResultMessage execute(ClientState state)
     {
         authorize(state);
-        int[] window = window();
+        byte[] days = "workday".equals(attribute) ? workdays() : null;
+        int[] window = days == null ? window() : null;
         IAuthorizer authorizer = DatabaseDescriptor.getAuthorizer();
         if (!(authorizer instanceof CassandraAuthorizer))
             throw new InvalidRequestException("CATEE is not enabled");
         try
         {
-            ((CassandraAuthorizer) authorizer).setCateeTimeWindow(window[0], window[1]);
+            if (days != null) ((CassandraAuthorizer) authorizer).setCateeWorkdays(days);
+            else ((CassandraAuthorizer) authorizer).setCateeTimeWindow(window[0], window[1]);
         }
         catch (InvalidRequestException e) { throw e; }
         catch (IOException | RuntimeException | LinkageError e)
         {
-            throw new InvalidRequestException("Required CATEE window update failed: " + e.getMessage());
+            throw new InvalidRequestException("Required CATEE " + (days == null ? "window" : "workday") + " update failed: " + e.getMessage());
         }
         return null;
     }

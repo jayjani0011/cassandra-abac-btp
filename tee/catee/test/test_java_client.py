@@ -126,6 +126,21 @@ class JavaHardwareTest(HardwareBase):
                 matched = expected == (540 <= minute < 1020)
                 self.assertEqual("ALLOW HW DEBUG\n" if matched else "DENY HW DEBUG\n", result.stdout)
 
+    def test_java_sets_workdays(self):
+        def configure(days):
+            return subprocess.run(["java", "-cp", f"{ROOT}/build/java:{ROOT}/build/java-deps/*",
+                                   "org.apache.cassandra.auth.catee.CateeClientDriver", str(self.path),
+                                   "SET_WORKDAY", days, "2000"], capture_output=True, text=True, timeout=5)
+        try:
+            result = configure("1000001")
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 1 1 1 0 0\n"]))
+            self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 1 840 0 - 1 1 1 0 0\n"]))
+            for invalid in ["", "111111", "11111111", "0000002"]:
+                self.assertNotEqual(0, configure(invalid).returncode)
+        finally:
+            self.assertEqual(0, configure("0111110").returncode)
+
     def test_java_worktime_boundaries(self):
         for minute, expected in [(0, "DENY"), (539, "DENY"), (540, "ALLOW"),
                                  (840, "ALLOW"), (1019, "ALLOW"), (1020, "DENY"),

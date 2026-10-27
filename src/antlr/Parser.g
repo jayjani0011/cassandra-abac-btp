@@ -1752,10 +1752,15 @@ describeStatement returns [DescribeStatement stmt]
     ;
 
 setEnvironmentAttributeStatement returns [SetEnvironmentAttributeStatement stmt]
+    @init { List<String> days = new ArrayList<String>(); }
     : K_SET K_ENV_ATTRIBUTE attribute=noncol_ident '='
-      sh=INTEGER ',' sm=INTEGER ',' eh=INTEGER ',' em=INTEGER
-      { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(),
-                                                      new String[] { $sh.text, $sm.text, $eh.text, $em.text }); }
+      ( sh=INTEGER ',' sm=INTEGER ',' eh=INTEGER ',' em=INTEGER
+        { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(),
+                                                       new String[] { $sh.text, $sm.text, $eh.text, $em.text }); }
+      | d=noncol_ident { days.add($d.id.toString()); }
+        ( ',' d=noncol_ident { days.add($d.id.toString()); } )*
+        { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(), days.toArray(new String[0])); }
+      )
     ;
 
 createAttributeStatement returns [CreateAttributeStatement.Raw stmt]

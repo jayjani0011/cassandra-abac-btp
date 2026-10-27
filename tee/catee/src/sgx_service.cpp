@@ -38,6 +38,7 @@ enum RequestType
     SGX_MSG_CHECK_ADMIN_PRIV,
     SGX_MSG_BEGIN_ROLE_DELETE,
     SGX_MSG_FINISH_ROLE_DELETE,
+    SGX_MSG_SET_WORKDAY,
     SGX_MSG_SET_TIMEWINDOW
 };
 
@@ -373,8 +374,49 @@ int main(int argc, char **argv)
             if (request.compare(0, 18, "BEGIN_ROLE_DELETE ") == 0) type = SGX_MSG_BEGIN_ROLE_DELETE;
             if (request.compare(0, 19, "FINISH_ROLE_DELETE ") == 0) type = SGX_MSG_FINISH_ROLE_DELETE;
             if (request.compare(0, 15, "SET_TIMEWINDOW ") == 0) type = SGX_MSG_SET_TIMEWINDOW;
+            if (request.compare(0, 12, "SET_WORKDAY ") == 0) type = SGX_MSG_SET_WORKDAY;
             switch (type)
             {
+                case SGX_MSG_SET_WORKDAY:
+                {
+                    uint8_t days[7]{};
+                    bool valid = request.size() == 25;
+                    for (int day = 0; day < 7 && valid; ++day)
+                    {
+                        char value = request[12 + 2 * day];
+                        valid = (value == '0' || value == '1')
+                                && (day == 6 || request[13 + 2 * day] == ' ');
+                        days[day] = value - '0';
+                    }
+                    if (!valid)
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1;
+                    ret = enclave_set_workday(global_eid, &result, days);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0) reply(client_fd, "ERROR invalid_workday\n");
+                    else
+                    {
+                        try
+                        {
+                            reseal_admin();
+                            reply(client_fd, "OK HW DEBUG\n");
+                        }
+                        catch (const std::exception& error)
+                        {
+                            std::cerr << "State persistence failed: " << error.what() << '\n';
+                            reply(client_fd, "ERROR persistence_failure\n");
+                            healthy = false;
+                        }
+                    }
+                    break;
+                }
                 case SGX_MSG_SET_TIMEWINDOW:
                 {
                     int start_minute = 0, end_minute = 0;
