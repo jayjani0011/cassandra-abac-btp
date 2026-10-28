@@ -13,7 +13,7 @@ def check_time(path, time_text):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(3)
         connection.connect(path)
-        connection.sendall(f"CHECK {hour * 60 + minute}\n".encode("ascii"))
+        connection.sendall(f"CHECK_ENV 0 {hour * 60 + minute} 0 - 0 1 0 1 0\n".encode("ascii"))
         response = bytearray()
         while len(response) < 64:
             ch = connection.recv(1)

@@ -49,6 +49,10 @@ class HardwareServiceTest(unittest.TestCase):
                 raise RuntimeError(cls.log.read())
             try:
                 if check_time(str(cls.path), "14:00"):
+                    if not check_time(str(cls.path), "00:00") or not check_time(str(cls.path), "23:59"):
+                        raise RuntimeError("Fresh enclave must use PATEE's full-day default")
+                    if exchange(cls.path, [b"SET_TIMEWINDOW 540 1020\n"]) != b"OK HW DEBUG\n":
+                        raise RuntimeError("Cannot configure the explicit test window")
                     return
             except OSError:
                 time.sleep(0.05)
@@ -66,30 +70,132 @@ class HardwareServiceTest(unittest.TestCase):
 
     def test_working_hours_and_boundaries(self):
         for clock, expected in [("00:00", False), ("08:59", False), ("09:00", True),
-                                ("14:00", True), ("16:59", True), ("17:00", False),
+                                ("14:00", True), ("16:59", True), ("17:00", True), ("17:01", False),
                                 ("20:00", False), ("23:59", False)]:
             with self.subTest(time=clock):
                 self.assertEqual(expected, check_time(str(self.path), clock))
 
+    def test_configurable_windows_match_all_minutes(self):
+        try:
+            for start, end in [(600, 660), (0, 1), (1438, 1439), (0, 1439), (0, 1440)]:
+                self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_TIMEWINDOW {start} {end}\n".encode()]))
+                for minute in range(1440):
+                    expected = b"ALLOW HW DEBUG\n" if start <= minute <= end else b"DENY HW DEBUG\n"
+                    self.assertEqual(expected, exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]),
+                                     (start, end, minute))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
+    def test_rejected_window_updates_preserve_configuration(self):
+        try:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 600 660\n"]))
+            for start, end in [(-1, 60), (60, 60), (61, 60), (1440, 1450), (600, 1441),
+                               (-2147483648, 2147483647), (0, -1)]:
+                self.assertEqual(b"ERROR invalid_timewindow\n",
+                                 exchange(self.path, [f"SET_TIMEWINDOW {start} {end}\n".encode()]))
+            for request in [b"SET_TIMEWINDOW\n", b"SET_TIMEWINDOW \n", b"SET_TIMEWINDOW 600\n",
+                            b"SET_TIMEWINDOW 600 660 extra\n", b"SET_TIMEWINDOW nope 660\n",
+                            b"SET_TIMEWINDOW 600 660 \n", b"SET_TIMEWINDOW  600 660\n",
+                            b"SET_TIMEWINDOW 600  660\n", b"SET_TIMEWINDOW +600 660\n",
+                            b"SET_TIMEWINDOW 600 660.0\n", b"SET_TIMEWINDOW 600 2147483648\n",
+                            b"SET_TIMEWINDOW -2147483649 660\n", b"SET_TIMEWINDOW 600 66\x000\n"]:
+                self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]), request)
+            self.assertTrue(check_time(str(self.path), "10:30"))
+            self.assertFalse(check_time(str(self.path), "14:00"))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
+    def test_fragmented_window_update(self):
+        try:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIME", b"WINDOW 720", b" 780\n"]))
+            self.assertTrue(check_time(str(self.path), "12:00"))
+            self.assertTrue(check_time(str(self.path), "13:00"))
+            self.assertFalse(check_time(str(self.path), "13:01"))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
+
     def test_enclave_rejects_out_of_range_minutes(self):
         for minute in [-1, 1440]:
             with self.subTest(minute=minute):
-                self.assertEqual(b"ERROR invalid_time\n",
-                                 exchange(self.path, [f"CHECK {minute}\n".encode()]))
+                self.assertEqual(b"ERROR invalid_environment\n",
+                                 exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]))
 
     def test_malformed_requests_do_not_kill_service(self):
-        for request in [b"\n", b"HELLO\n", b"CHECK \n", b"CHECK nope\n",
-                        b"CHECK 840 extra\n", b"CHECK 999999999999999999999\n",
-                        b"x" * 64 + b"\n"]:
+        for request in [b"\n", b"HELLO\n", b"CHECK_ENV 0  0 - 0 1 0 1 0\n", b"CHECK_ENV 0 nope 0 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 extra 0 - 0 1 0 1 0\n", b"CHECK_ENV 0 999999999999999999999 0 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 -1 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 4294967296 - 0 1 0 1 0\n",
+                        b"CHECK_ENV 0 840 0 - 0 1 0 1 0 extra\n",
+                        b"x" * 256 + b"\n"]:
             with self.subTest(request=request):
                 self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]))
         self.assertTrue(check_time(str(self.path), "14:00"))
 
+    def test_combined_environment_checks(self):
+        for minute in [0, 539, 540, 840, 1019, 1020, 1439]:
+            for expected in [0, 1]:
+                matched = expected == (540 <= minute <= 1020)
+                response = exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 {expected} 0 1 0\n".encode()])
+                self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n", response)
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 0 0 0 0\n"]))
+        for flags in ["0 0 1", "1 1 1"]:
+            self.assertEqual(b"DENY HW DEBUG\n",
+                             exchange(self.path, [f"CHECK_ENV 0 840 0 6e616d6564 1 1 {flags}\n".encode()]))
+        for fields in ["7 840 0 - 0 1 0 1 0", "0 -1 0 - 0 1 0 1 0",
+                       "0 1440 0 - 0 1 0 1 0", "0 840 0 - 0 2 0 1 0",
+                       "0 840 0 - 0 1 0 2 0"]:
+            self.assertEqual(b"ERROR invalid_environment\n",
+                             exchange(self.path, [f"CHECK_ENV {fields}\n".encode()]))
+        self.assertTrue(check_time(str(self.path), "14:00"))
+
+    def test_workday_configuration_and_combined_checks(self):
+        try:
+            for mask in ["0 1 1 1 1 1 0", "1 0 0 0 0 0 1", "1 1 1 1 1 1 1", "0 0 0 0 0 0 0"]:
+                self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_WORKDAY {mask}\n".encode()]))
+                for day, selected in enumerate(map(int, mask.split())):
+                    for expected in [0, 1]:
+                        for minute in [0, 840]:
+                            matched = expected == selected and minute == 840
+                            self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n",
+                                             exchange(self.path, [f"CHECK_ENV {day} {minute} 0 - {expected} 1 1 1 0\n".encode()]))
+            for request in [b"SET_WORKDAY 1 1 1 1 1 1\n", b"SET_WORKDAY 1 1 1 1 1 1 2\n",
+                            b"SET_WORKDAY 1 1 1 1 1 1 1 extra\n", b"SET_WORKDAY -1 0 0 0 0 0 0\n"]:
+                self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [request]))
+            self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 1 840 0 - 0 1 1 0 0\n"]))
+        finally:
+            self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_WORKDAY 0 1 1 1 1 1 0\n"]))
+
+    def test_subnet_configuration_and_boundaries(self):
+        name = "campus space".encode().hex()
+        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [f"SUBNET_EXISTS {name}\n".encode()]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_SUBNET {name} 167772160 8\n".encode()]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [f"SUBNET_EXISTS {name}\n".encode()]))
+        for ip, matched in [(167772159,False),(167772160,True),(184549375,True),(184549376,False)]:
+            self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n",
+                             exchange(self.path, [f"CHECK_ENV 1 840 {ip} {name} 1 1 1 1 1\n".encode()]))
+        for request in [f"SET_SUBNET {name} 1 0\n", f"SET_SUBNET {name} 0 33\n",
+                        "SET_SUBNET zz 0 0\n", "SET_SUBNET 00 0 0\n", "SUBNET_EXISTS 61 extra\n"]:
+            self.assertTrue(exchange(self.path, [request.encode()]).startswith(b"ERROR "))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_SUBNET {name} 0 0\n".encode()]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [f"CHECK_ENV 1 840 4294967295 {name} 0 0 0 0 1\n".encode()]))
+
+    def test_z_subnet_capacity_and_updates(self):
+        # Earlier tests may have one named subnet; fill until capacity rejects.
+        inserted = []
+        for i in range(33):
+            name = f"capacity{i}".encode().hex()
+            response = exchange(self.path, [f"SET_SUBNET {name} 0 0\n".encode()])
+            if response.startswith(b"ERROR "): break
+            inserted.append(name)
+        self.assertTrue(inserted)
+        self.assertLess(len(inserted),33)
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_SUBNET {inserted[0]} 2130706433 32\n".encode()]))
+
     def test_fragmented_request(self):
-        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CH", b"ECK ", b"840", b"\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CH", b"ECK_ENV ", b"0 840 0 - 0 1 0 1 0", b"\n"]))
 
     def test_incomplete_request_times_out(self):
-        self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [b"CHECK "]))
+        self.assertEqual(b"ERROR invalid_request\n", exchange(self.path, [b"CHECK_ENV "]))
         self.assertTrue(check_time(str(self.path), "14:00"))
 
     def test_existing_file_is_not_overwritten(self):

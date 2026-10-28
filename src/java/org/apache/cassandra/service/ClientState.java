@@ -676,6 +676,9 @@ public class ClientState
 
     private Set<Permission> authorize(IResource resource)
     {
+        IAuthorizer authorizer = DatabaseDescriptor.getAuthorizer();
+        if (authorizer instanceof CassandraAuthorizer)
+            return ((CassandraAuthorizer) authorizer).authorizeWithContext(user, resource, getClientAddress());
         return user.getPermissions(resource);
     }
 

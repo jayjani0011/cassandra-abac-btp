@@ -237,7 +237,8 @@ options {
 
 cqlStatement returns [CQLStatement.Raw stmt]
     @after{ if (stmt != null) stmt.setBindVariables(bindVariables); }
-    : st1= selectStatement                 { $stmt = st1; }
+    : env=setEnvironmentAttributeStatement { $stmt = env; }
+    | st1= selectStatement                 { $stmt = st1; }
     | st2= insertStatement                 { $stmt = st2; }
     | st3= updateStatement                 { $stmt = st3; }
     | st4= batchStatement                  { $stmt = st4; }
@@ -1739,6 +1740,21 @@ describeStatement returns [DescribeStatement stmt]
     ( K_WITH K_INTERNALS { $stmt.withInternalDetails(); } )?
     ;
 
+setEnvironmentAttributeStatement returns [SetEnvironmentAttributeStatement stmt]
+    @init { List<String> days = new ArrayList<String>(); }
+    : K_SET K_ENV_ATTRIBUTE attribute=noncol_ident '='
+      ( sh=INTEGER ',' sm=INTEGER ',' eh=INTEGER ',' em=INTEGER
+        { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(),
+                                                       new String[] { $sh.text, $sm.text, $eh.text, $em.text }); }
+      | n=noncol_ident '=' c=STRING_LITERAL { days.add($n.id.toString()); days.add($c.text); }
+        ( ',' n=noncol_ident '=' c=STRING_LITERAL { days.add($n.id.toString()); days.add($c.text); } )*
+        { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(), days.toArray(new String[0])); }
+      | d=noncol_ident { days.add($d.id.toString()); }
+        ( ',' d=noncol_ident { days.add($d.id.toString()); } )*
+        { $stmt = new SetEnvironmentAttributeStatement($attribute.id.toString(), days.toArray(new String[0])); }
+      )
+    ;
+
 createAttributeStatement returns [CreateAttributeStatement.Raw stmt]
     @init {
         boolean ifNotExists = false;
@@ -2366,7 +2382,8 @@ unreserved_function_keyword returns [String str]
     ;
 
 basic_unreserved_keyword returns [String str]
-    : k=( K_KEYS
+    : k=( K_ENV_ATTRIBUTE
+        | K_KEYS
         | K_AS
         | K_CLUSTER
         | K_CLUSTERING

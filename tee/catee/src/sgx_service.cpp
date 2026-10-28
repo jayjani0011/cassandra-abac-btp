@@ -11,6 +11,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -19,7 +20,7 @@
 
 /* ---------- Configuration and Service State ---------- */
 
-constexpr size_t MAX_REQUEST_SIZE = 64;
+constexpr size_t MAX_REQUEST_SIZE = 256;
 constexpr int REQUEST_TIMEOUT_SECONDS = 1;
 constexpr int RESPONSE_TIMEOUT_SECONDS = 1;
 constexpr int LISTENER_POLL_MS = 250;
@@ -28,7 +29,11 @@ constexpr int LISTEN_BACKLOG = 16;
 enum RequestType
 {
     SGX_MSG_UNKNOWN,
-    SGX_MSG_CHECK_WORKTIME
+    SGX_MSG_CHECK_ENV,
+    SGX_MSG_SET_SUBNET,
+    SGX_MSG_SUBNET_EXISTS,
+    SGX_MSG_SET_WORKDAY,
+    SGX_MSG_SET_TIMEWINDOW
 };
 
 sgx_enclave_id_t global_eid = 0;
@@ -38,6 +43,21 @@ std::string socket_path;
 struct stat socket_identity{};
 bool socket_bound = false;
 volatile std::sig_atomic_t stopping = 0;
+
+// Names are hex-encoded UTF-8, keeping spaces and arbitrary identifier bytes framed.
+std::string decode_subnet_name(const std::string &hex)
+{
+    if (hex.empty() || hex.size() > 126 || hex.size() % 2 != 0) return {};
+    std::string name;
+    for (size_t i = 0; i < hex.size(); i += 2)
+    {
+        unsigned value = 0;
+        auto result = std::from_chars(hex.data() + i, hex.data() + i + 2, value, 16);
+        if (result.ec != std::errc() || result.ptr != hex.data() + i + 2 || value == 0) return {};
+        name.push_back(static_cast<char>(value));
+    }
+    return name;
+}
 
 /* ---------- Helpers ---------- */
 
@@ -228,24 +248,139 @@ int main(int argc, char **argv)
                 close_client();
                 continue;
             }
-            RequestType type = request.compare(0, 6, "CHECK ") == 0
-                               ? SGX_MSG_CHECK_WORKTIME : SGX_MSG_UNKNOWN;
+            RequestType type = request.compare(0, 10, "CHECK_ENV ") == 0
+                               ? SGX_MSG_CHECK_ENV : SGX_MSG_UNKNOWN;
+            if (request.compare(0, 15, "SET_TIMEWINDOW ") == 0) type = SGX_MSG_SET_TIMEWINDOW;
+            if (request.compare(0, 12, "SET_WORKDAY ") == 0) type = SGX_MSG_SET_WORKDAY;
+            if (request.compare(0, 11, "SET_SUBNET ") == 0) type = SGX_MSG_SET_SUBNET;
+            if (request.compare(0, 14, "SUBNET_EXISTS ") == 0) type = SGX_MSG_SUBNET_EXISTS;
             switch (type)
             {
-                case SGX_MSG_CHECK_WORKTIME:
+                case SGX_MSG_SET_SUBNET:
+                case SGX_MSG_SUBNET_EXISTS:
                 {
-                    int minute = 0;
-                    const char *end = request.data() + request.size();
-                    auto parsed = std::from_chars(request.data() + 6, end, minute);
-                    if (parsed.ec != std::errc() || parsed.ptr != end)
+                    bool update = type == SGX_MSG_SET_SUBNET;
+                    std::istringstream fields(request.substr(update ? 11 : 14));
+                    std::string encoded, network_text, prefix_text, extra;
+                    uint32_t network = 0, prefix = 0;
+                    bool valid = static_cast<bool>(fields >> encoded);
+                    if (update)
+                    {
+                        valid = valid && static_cast<bool>(fields >> network_text >> prefix_text);
+                        auto n = std::from_chars(network_text.data(), network_text.data() + network_text.size(), network);
+                        auto p = std::from_chars(prefix_text.data(), prefix_text.data() + prefix_text.size(), prefix);
+                        valid = valid && n.ec == std::errc() && n.ptr == network_text.data() + network_text.size()
+                                      && p.ec == std::errc() && p.ptr == prefix_text.data() + prefix_text.size();
+                    }
+                    if (fields >> extra) valid = false;
+                    std::string name = decode_subnet_name(encoded);
+                    if (!valid || name.empty())
                     {
                         reply(client_fd, "ERROR invalid_request\n");
                         break;
                     }
-
-                    int result = -1, allowed = 0, debug = 0;
-                    ret = check_worktime(global_eid, &result, minute, &allowed, &debug);
+                    int result = -1, exists = 0;
+                    ret = update ? enclave_set_subnet(global_eid, &result, name.c_str(), network, prefix)
+                                 : enclave_subnet_exists(global_eid, &result, name.c_str(), &exists);
                     if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0) reply(client_fd, "ERROR subnet_operation_failed\n");
+                    else if (!update) reply(client_fd, exists ? "ALLOW HW DEBUG\n" : "DENY HW DEBUG\n");
+                    else reply(client_fd, "OK HW DEBUG\n");
+                    break;
+                }
+                case SGX_MSG_SET_WORKDAY:
+                {
+                    uint8_t days[7]{};
+                    bool valid = request.size() == 25;
+                    for (int day = 0; day < 7 && valid; ++day)
+                    {
+                        char value = request[12 + 2 * day];
+                        valid = (value == '0' || value == '1')
+                                && (day == 6 || request[13 + 2 * day] == ' ');
+                        days[day] = value - '0';
+                    }
+                    if (!valid)
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1;
+                    ret = enclave_set_workday(global_eid, &result, days);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0) reply(client_fd, "ERROR invalid_workday\n");
+                    else reply(client_fd, "OK HW DEBUG\n");
+                    break;
+                }
+                case SGX_MSG_SET_TIMEWINDOW:
+                {
+                    int start_minute = 0, end_minute = 0;
+                    const char *end = request.data() + request.size();
+                    auto start = std::from_chars(request.data() + 15, end, start_minute);
+                    if (start.ec != std::errc() || start.ptr == end || *start.ptr != ' ')
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    auto finish = std::from_chars(start.ptr + 1, end, end_minute);
+                    if (finish.ec != std::errc() || finish.ptr != end)
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int result = -1;
+                    ret = enclave_set_timewindow(global_eid, &result, start_minute, end_minute);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1))
+                    {
+                        reply(client_fd, "ERROR enclave_failure\n");
+                        healthy = false;
+                    }
+                    else if (result != 0)
+                        reply(client_fd, "ERROR invalid_timewindow\n");
+                    else
+                        reply(client_fd, "OK HW DEBUG\n");
+                    break;
+                }
+                case SGX_MSG_CHECK_ENV:
+                {
+                    int values[7]{};
+                    uint32_t ip = 0;
+                    std::string tokens[9], extra;
+                    std::istringstream fields(request.substr(10));
+                    bool valid = true;
+                    for (auto &token : tokens)
+                        if (!(fields >> token)) valid = false;
+                    if (fields >> extra) valid = false;
+                    for (int i = 0, j = 0; i < 9 && valid; ++i)
+                    {
+                        if (i == 3) continue;
+                        const char *end = tokens[i].data() + tokens[i].size();
+                        auto parsed = i == 2 ? std::from_chars(tokens[i].data(), end, ip)
+                                             : std::from_chars(tokens[i].data(), end, values[j++]);
+                        valid = parsed.ec == std::errc() && parsed.ptr == end;
+                    }
+                    std::string subnet = tokens[3] == "-" ? "" : decode_subnet_name(tokens[3]);
+                    if (!valid || (tokens[3] != "-" && subnet.empty()))
+                    {
+                        reply(client_fd, "ERROR invalid_request\n");
+                        break;
+                    }
+                    int day = values[0], minute = values[1];
+                    int expected_day = values[2], expected_time = values[3];
+                    int check_day = values[4], check_time = values[5], check_subnet = values[6];
+                    int result = -1, allowed = 0, debug = 0;
+                    ret = enclave_check_env(global_eid, &result, day, minute, ip,
+                                            subnet.c_str(),
+                                            expected_day, expected_time, check_day, check_time,
+                                            check_subnet, &allowed, &debug);
+                    if (ret != SGX_SUCCESS || (result != 0 && result != 1 && result != 2))
                     {
                         std::cerr << "ECALL failed: transport=0x" << std::hex << ret
                                   << std::dec << ", application=" << result << '\n';
@@ -253,7 +388,9 @@ int main(int argc, char **argv)
                         healthy = false;
                     }
                     else if (result == 1)
-                        reply(client_fd, "ERROR invalid_time\n");
+                        reply(client_fd, "ERROR invalid_environment\n");
+                    else if (result == 2)
+                        reply(client_fd, "ERROR unsupported_check\n");
                     else if (debug != 1 || (allowed != 0 && allowed != 1))
                     {
                         reply(client_fd, "ERROR unexpected_enclave_result\n");

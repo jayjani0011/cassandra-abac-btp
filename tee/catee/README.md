@@ -1,4 +1,4 @@
-# CATEE: first standalone slice
+# CATEE: working-hours prototype
 
 This small prototype follows PATEE's process layout:
 
@@ -6,10 +6,37 @@ This small prototype follows PATEE's process layout:
 Python test client -> local Unix socket -> native service -> ECALL -> SGX enclave
 ```
 
-The enclave contains a **fixed development fixture**, 09:00 inclusive to 17:00
-exclusive. Both the configuration and comparison live inside the enclave. The
+The enclave window defaults to the full day (minutes 0–1440, inclusive) and can be
+updated through the native service. Both the configuration and comparison live inside the enclave. The
 client supplies a time; this is not a trusted clock or a complete authorization
-decision. Cassandra is not connected to this service yet.
+decision. Cassandra can opt into this service for policies requiring `worktime`.
+
+## Working-hours configuration
+
+Like PATEE's `enclave_set_timewindow`, the enclave accepts start/end minutes.
+`CateeClient.setTimeWindow(startMinute, endMinute)` sends:
+
+```text
+SET_TIMEWINDOW <startMinute> <endMinute>\n
+```
+
+The window must satisfy `0 <= start < end <= 1440`; invalid updates leave it
+unchanged. The response must be exactly `OK HW DEBUG`. Checks continue to use
+start-inclusive, end-inclusive boundaries. This transport trusts the permitted
+OS UID. Cassandra superusers can configure the same window through CQL:
+
+```cql
+SET ENV_ATTRIBUTE worktime = 9, 0, 17, 0;
+```
+
+The values are start hour, start minute, end hour, end minute. Hours must be 0–23,
+minutes 0–59, and start must precede end; overnight windows are unsupported.
+The window is node-local and applies to every CATEE worktime condition.
+CATEE must be enabled. Invalid updates, unsupported attributes, non-superusers,
+and required service failures reject the command. Updates are audited as
+`SET_ENV_ATTRIBUTE`. Delegated configuration privileges remain a later step.
+Window changes currently remain in enclave memory and reset on restart;
+adding the window to the administration branch's sealed state is still pending.
 
 ## File layout
 
@@ -24,7 +51,9 @@ tee/catee/
 │       └── Enclave.lds
 ├── test/
 │   ├── client.py
-│   └── test_service.py
+│   ├── test_service.py
+│   ├── test_java_client.py
+│   └── java/org/apache/cassandra/auth/catee/CateeClientDriver.java
 ├── Makefile
 └── README.md
 ```
@@ -77,11 +106,108 @@ Stop the service with Ctrl+C. It removes its own socket on normal shutdown;
 remove the now-empty temporary directory yourself. Following a forced kill,
 choose a fresh private directory; the service never overwrites an existing path.
 
+## Java socket client
+
+`../../src/java/org/apache/cassandra/auth/catee/CateeClient.java` is the database-side
+IPC helper. It follows PATEE's `send_request_to_sgx_service()` flow: open a Unix
+socket, send one request, read one response, and close the connection. It currently
+uses this service's existing text protocol rather than PATEE's C binary structs.
+The same transport source is compiled by Cassandra and the standalone test harness.
+
+Java 11 Unix sockets use [junixsocket](https://kohlschutter.github.io/junixsocket/dependency.html)
+2.11.1. The Makefile downloads its two JARs to ignored `build/java-deps/` and checks
+pinned SHA-256 hashes before installing them. Only the first build needs a download.
+There is no project-specific JNI bridge or JDK upgrade.
+
+```bash
+# From tee/catee, with the SGX SDK environment loaded:
+make test-java
+# With the native service running, test 14:00 (840 minutes) and a 2000 ms timeout:
+java -cp 'build/java:build/java-deps/*' org.apache.cassandra.auth.catee.CateeClientDriver /tmp/catee-demo.REPLACE/catee.sock 840 2000
+```
+
+The test driver lives under `test/java/`. The reusable API is
+`new CateeClient(socketPath, timeoutMillis).checkWorktime(minute)`.
+It returns a Boolean only for an exact ALLOW/DENY reply; connection, read and
+protocol errors throw exceptions. Connections and reads share a deadline, replies
+are limited to 64 bytes, and slowly arriving bytes do not reset the deadline.
+Requests are a single small blocking write; general write-deadline handling is
+not implemented. Each call closes its socket, including on errors, without retry.
+The supplied minute remains an untrusted observation, and the socket reply is not
+cryptographic proof of enclave identity.
+
+`make test-java` runs the existing 11 native tests, Java checks against the real
+hardware service, and controlled-peer tests for malformed replies and timeouts.
+It compiles with `javac --release 11`. Cassandra's Ant dependency POM includes the
+same two transport JARs for normal builds and runtime packaging.
+
+## Cassandra integration
+
+Leave `cassandra.catee.socket` unset for the existing native ABAC behavior. To opt
+in, pass these JVM properties when starting Cassandra (for example through
+`JVM_EXTRA_OPTS` in a source checkout):
+
+```text
+-Dcassandra.catee.socket=/absolute/private/directory/catee.sock
+-Dcassandra.catee.timeout_ms=2000
+```
+
+Run the existing native service under the same OS user. Settings are captured when
+`CassandraAuthorizer` is constructed. The socket path must be absolute and the
+timeout must be 1–60000 milliseconds. These are connection settings, not policy
+configuration; the enclave window defaults to 09:00–17:00.
+
+Use the exact environment condition `{'worktime': 'true'}` (or `'false'`) in an
+ABAC rule. This uses the existing CREATE RULE syntax and `system_auth.abac_rules`
+map; no CQL grammar, administration handlers, or schema were changed.
+
+The flow follows PATEE's `check_abac_env_conditions()`: the database observes local
+time and asks the service to check it. The host clock and JVM timezone are trusted
+inputs. Cassandra only requests SGX evaluation when user/resource conditions and
+other environmental conditions match a rule requiring a protected check. Each
+applicable rule sends its expectations to `enclave_check_env`, following PATEE.
+The enclave compares the observation with the expectation and returns a rule match;
+Cassandra does not compare or reuse an enclave Boolean across rules.
+
+The common interface carries day, minute, IPv4 address, subnet name, expected
+working-day/time values and three check flags. Working day and working time are implemented. Subnet conditions also use SGX with the actual client IPv4 address; protected
+conditions never fall back to ordinary providers in CATEE mode.
+
+In CATEE mode, worktime comes from SGX rather than a Java environment provider and
+never uses attribute hierarchy edges. Required service failures, invalid worktime
+values and ABAC execution errors abort authorization rather than falling back to
+RBAC. Successful evaluation preserves the existing result: RBAC union (ABAC grants
+minus ABAC denies). A healthy nonmatch does not revoke an RBAC grant. Policies
+without a required worktime check do not need a running service. Other environment
+attributes still use the existing providers; the superuser shortcut is unchanged.
+
+Final permission caching is bypassed when CATEE is enabled so a cached grant or an
+RBAC-only warmup entry cannot skip a newly required SGX check. This also makes
+non-worktime authorizations uncached in that mode. Role metadata caches remain.
+
+Focused checks from the repository root, after building the native service:
+
+```bash
+ant build-test
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeEnvironmentConfigurationTest
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeAuthorizerTest -Dtest.jvm.args=-Dcatee.test.hardware=true
+catee_cql_dir=$(mktemp -d /tmp/catee-cql.XXXXXX)
+ant testsome -Dtest.name=org.apache.cassandra.auth.CateeCqlTest -Dtest.jvm.args="-Dcatee.test.hardware=true -Dcassandra.catee.socket=$catee_cql_dir/catee.sock"
+rmdir "$catee_cql_dir"
+```
+
+The hardware tests are explicitly opt-in. The network CQL test creates a policy
+using the existing grammar, checks allow/deny after policy updates, stops the
+service to verify failure despite an RBAC grant, and verifies that removing the
+worktime condition permits access without the service. All Cassandra test data is
+isolated under the test build directory; historical benchmarks are not rerun.
+
 ## Deliberately small scope
 
-- One request per connection: ASCII `CHECK <minute>\n`, where minute is 0–1439.
-- Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, or `ERROR <reason>\n`.
-- Requests are limited to 64 bytes including the newline, with a one-second
+- One request per connection: ASCII `CHECK_ENV <day> <minute> <ipv4> <subnet> <expectedDay> <expectedTime> <checkDay> <checkTime> <checkSubnet>\n`, or
+  `SET_TIMEWINDOW <startMinute> <endMinute>\n`.
+- Replies: `ALLOW HW DEBUG\n`, `DENY HW DEBUG\n`, `OK HW DEBUG\n`, or `ERROR <reason>\n`.
+- Requests are limited to 256 bytes including the newline, with a one-second
   request deadline. Inputs outside the minute range are rejected inside SGX.
 - The socket parent must be owned by the service user and private. Only the same
   OS UID can connect. This does not authenticate a particular program or protect
@@ -92,8 +218,60 @@ choose a fresh private directory; the service never overwrites an existing path.
   invalid/fragmented requests, timeout and startup failures, and stops it afterward.
 
 This is an intentionally temporary text protocol, **not** the proposed full v1
-binary protocol in the design draft. There are no administrative updates, sealing,
-policy processing, Java client, Cassandra changes, or remote attestation in this
+binary protocol in the design draft. There is no sealed window persistence,
+enclave policy processing, or remote attestation in this
 slice. Add those incrementally after reviewing this working path.
 
 Architecture reference: [PATEE's pinned implementation](https://github.com/harshit-jain52/postgres/tree/79d3f29576419d457c516bcda5d757d99f104b14/tee).
+
+`CHECK_ENV` uses Sunday=0 through Saturday=6, minute 0–1439, an unsigned
+IPv4 integer, and 0/1 Boolean fields. `-` denotes no subnet. For example,
+`CHECK_ENV 0 840 0 - 0 0 0 1 0` asks whether 14:00 matches worktime=false.
+The default window is full-day (0–1440) and both bounds are inclusive, matching PATEE.
+`CateeClient.checkWorktime` remains a convenience wrapper requesting expected=true;
+it uses this same common ECALL, not an observation-only enclave operation.
+
+## Working-day configuration
+
+Following PATEE, configure a named set with
+`SET ENV_ATTRIBUTE workday = monday,tuesday,wednesday,thursday,friday;`.
+The enclave stores seven 0/1 values indexed Sunday=0 through Saturday=6, defaults
+to Monday-Friday, and compares the supplied day with the rule's expected Boolean.
+Day and time checks are combined in one ECALL. Duplicate day names are harmless;
+unknown names are rejected before sending. Configuration remains superuser-only.
+`SET_WORKDAY <sun> <mon> <tue> <wed> <thu> <fri> <sat>` uses seven 0/1 fields.
+Subnet evaluation is implemented (see below). Sealing is added in catee/administration.
+
+## PATEE environmental rule names
+
+The four rule keys are `workday`, `worktime`, `subnet`, and `server_load`.
+Configure named IPv4 networks with
+`SET ENV_ATTRIBUTE subnet = campus='10.0.0.0/8', local='127.0.0.1/32';`.
+The enclave stores at most 32 names (63 UTF-8 bytes each), updates existing names,
+checks subnet existence for CREATE RULE, and evaluates supplied client IPv4 addresses.
+CIDRs require network addresses (no host bits); /0 and /32 are supported.
+Names in text IPC are hex UTF-8; `-` means no subnet in CHECK_ENV. IPv6 or missing
+client context fails a required subnet check; there is no local-client bypass.
+Cassandra passes the actual connection address explicitly from ClientState, never
+through username-wide mutable state or a ThreadLocal.
+
+`server_load` is a finite threshold in [0,1], checked outside SGX as in PATEE.
+Cassandra uses open native connections divided by a positive
+`native_transport_max_concurrent_connections`. Unlimited/zero capacity rejects a
+required load check; configuration files are not changed automatically. PostgreSQL's
+reference counts STATE_RUNNING backends; Cassandra multiplexes requests and uses
+its native connection count instead, so the metric is a documented adaptation.
+Equality satisfies the threshold. Load-only rules do not require the SGX service.
+Multiple subnet pairs are validated before sending, then applied in order as in
+PATEE; a later capacity/persistence failure can leave earlier pairs applied.
+Subnet sealing is supplied by catee/administration.
+
+## PATEE time conventions
+
+A fresh enclave uses start=0, end=1440. Observations remain valid only for minutes
+0–1439; 1440 is an end sentinel, not a valid current time. Both ends of a configured
+window are inclusive. For example, 10:00–11:00 includes the entire 11:00 minute.
+CQL hours remain 0–23 and minutes 0–59, as in PATEE's configuration handler:
+`SET ENV_ATTRIBUTE worktime = 0,0,23,59` covers every valid minute; 24:00 is invalid.
+Tests requiring a restricted window configure it explicitly instead of relying on
+the startup default. Stored-window migration is handled in catee/administration.
