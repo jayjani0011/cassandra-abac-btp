@@ -70,6 +70,7 @@ def main():
             ("CateeAuthorizerTest", "hardwareServiceDrivesPolicyAndFailureBlocksRbac"),
             ("CateeCqlTest", "cqlUsesEnclaveAndDoesNotReuseStalePermissions"),
             ("CateeConcurrentCqlTest", "concurrentQueriesObservePolicyChanges"),
+            ("CateeEnvironmentalDelegationCqlTest", "environmentalDelegationSurvivesRestartAndIsRevokedAndDeleted"),
             ("org.apache.cassandra.cql3.statements.CreateRoleStatementTest", None),
             ("org.apache.cassandra.audit.AuditLogEntryTest", None),
             ("AbacConfigurationLoaderTest", None),
@@ -81,7 +82,7 @@ def main():
                 class_name = short_name if "." in short_name else "org.apache.cassandra.auth." + short_name
                 short_name = class_name.rsplit(".", 1)[-1]
                 options = "-Dcatee.test.hardware=true"
-                if short_name in ("CateeCqlTest", "CateeConcurrentCqlTest"):
+                if short_name in ("CateeCqlTest", "CateeConcurrentCqlTest", "CateeEnvironmentalDelegationCqlTest"):
                     options += f" -Dcassandra.catee.socket={directory}/catee.sock"
                 run(short_name, ["ant", "testsome", "-Dno-build-test=true", f"-Dtest.name={class_name}",
                                  f"-Dbuild.test.output.dir={reports}", f"-Dtest.jvm.args={options}"], output)

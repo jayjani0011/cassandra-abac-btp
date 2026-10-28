@@ -36,6 +36,11 @@ int main(int argc, char **argv)
     expect_check(enclave, alice, 2, 1);
     assert(enclave_revoke_admin_priv(enclave, &result, bob, 1) == SGX_SUCCESS && result == 0);
 
+    assert(enclave_grant_admin_priv(enclave, &result, alice, 512) == SGX_SUCCESS && result == 0);
+    expect_check(enclave, alice, 512, 1);
+    assert(enclave_revoke_admin_priv(enclave, &result, alice, 512) == SGX_SUCCESS && result == 0);
+    expect_check(enclave, alice, 512, 0);
+
     char empty[256] = {}, unterminated[256];
     memset(unterminated, 'x', sizeof(unterminated));
     const char *invalid_roles[] = {nullptr, empty, unterminated};

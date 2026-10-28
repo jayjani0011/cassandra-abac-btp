@@ -61,7 +61,7 @@ static_assert(sizeof(LegacySealedAdminState) == 8328, "Unexpected version-1 layo
 static_assert(sizeof(LegacySealedAdminStateV2) == 8456, "Unexpected version-2 layout");
 static_assert(sizeof(LegacySealedAdminStateV3) == 8464, "Unexpected version-3 layout");
 static_assert(sizeof(LegacySealedAdminStateV4) == 8472, "Unexpected version-4 layout");
-static_assert(sizeof(SealedAdminState) == 10780, "Unexpected version-5 layout");
+static_assert(sizeof(SealedAdminState) == 10780, "Unexpected version-5/6 layout");
 
 int enclave_get_sealed_size(uint32_t *sealed_size)
 {
@@ -76,7 +76,7 @@ int enclave_seal_admin(uint8_t *sealed_data, uint32_t sealed_size)
     uint32_t required = 0;
     if (enclave_get_sealed_size(&required) != 0 || sealed_data == nullptr || sealed_size != required)
         return 1;
-    SealedAdminState state{5, admin_privileges, worktime_window, {}, subnets};
+    SealedAdminState state{6, admin_privileges, worktime_window, {}, subnets};
     memcpy(state.days, workdays, sizeof(workdays));
     return sgx_seal_data(0, nullptr, sizeof(state), reinterpret_cast<const uint8_t *>(&state),
                          sealed_size, reinterpret_cast<sgx_sealed_data_t *>(sealed_data)) == SGX_SUCCESS ? 0 : 1;
@@ -98,7 +98,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     if (sgx_unseal_data(sealed, nullptr, &additional_size, payload, &size) != SGX_SUCCESS
         || size != payload_size)
         return 1;
-    SealedAdminState state{5, {}, {9 * 60, 17 * 60}, {0, 1, 1, 1, 1, 1, 0}, {}};
+    SealedAdminState state{6, {}, {9 * 60, 17 * 60}, {0, 1, 1, 1, 1, 1, 0}, {}};
     if (size == sizeof(LegacySealedAdminState))
     {
         LegacySealedAdminState legacy{};
@@ -138,7 +138,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     else
     {
         memcpy(&state, payload, sizeof(state));
-        if (state.version != 5) return 1;
+        if (state.version != 5 && state.version != 6) return 1;
     }
     if (!state.subnets.valid()) return 1;
     for (uint8_t day : state.days)
@@ -157,6 +157,13 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
             if (strcmp(state.privileges.entries[i].role_name, state.privileges.entries[j].role_name) == 0)
                 return 1;
     }
+    // Pre-v6 masks could contain raw bit 9, which had no SET_EA_ADMIN meaning.
+    // Validate the original snapshot first, then remove only that newly assigned bit.
+    uint32_t source_version = 0;
+    memcpy(&source_version, payload, sizeof(source_version));
+    if (source_version <= 5)
+        for (unsigned i = 0; i < state.privileges.count; ++i)
+            state.privileges.entries[i].priv_mask &= ~AdminPrivileges::set_ea_admin;
     admin_privileges = state.privileges;
     worktime_window = state.window;
     memcpy(workdays, state.days, sizeof(workdays));

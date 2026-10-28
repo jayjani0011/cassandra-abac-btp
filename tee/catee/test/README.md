@@ -21,7 +21,7 @@ the test data directory. Do not run another Ant test job at the same time.
 | Administration and role lifecycle | Supported commands, direct grants, validation, ordering, failures at each cleanup stage, retries, recreation and concurrent mutations |
 | Sequential hardware CQL | Real Cassandra requests through IPC/ECALLs, configuration affecting data access, restart persistence, failed saves, existing sessions and service failure |
 | Concurrent hardware CQL | Eight independent authenticated sessions; 2,400 reads over allow/revoke/regrant phases; 320 concurrent administrative updates; abrupt service death and recovery |
-| Sealed state | Versions 1/2/3/4/5, grant/marker/window/workday restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
+| Sealed state | Versions 1/2/3/4/5/6, grant/marker/window/workday restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
 | Persistence fault injection | All seven mutable operations at nine named host I/O/error/exit boundaries (63 subcases) |
 | Evaluation tooling | Bad/missing samples, statistical fixtures, smoke labeling, CSV/image export, overwrite refusal and historical-output protection |
 | Benchmark smoke | One native/SGX pair with tiny batches, followed by analysis; all generated output is validation-only and isolated |
@@ -75,3 +75,10 @@ reconfiguration, invalid thresholds, finite connection capacity and load-only
 operation while SGX is unavailable. Cassandra's load numerator is open native
 connections, unlike PostgreSQL's STATE_RUNNING backends; this is documented in
 README. The connection limit is restored after tests.
+
+SET_EA_ADMIN coverage includes protected-only CQL grant/revoke, exact bit mapping,
+all three settings, denial without a direct primary-role grant, revocation on an
+existing session, restart, failed grant persistence, role deletion/recreation and
+unavailable service. Old versions 1–5 never acquire authority from raw bit 9;
+version 6 preserves explicit new grants. The delegation CQL suite is required and
+must execute without skips in the validation runner.

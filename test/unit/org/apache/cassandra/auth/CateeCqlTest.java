@@ -93,7 +93,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
         }
         assertInvalidMessageNet("Invalid workday", "SET ENV_ATTRIBUTE workday = 9,0,17,0");
         useUser("catee_reader", "test-password");
-        assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE worktime = 9,0,17,0");
+        assertInvalidMessageNet("SET_EA_ADMIN", "SET ENV_ATTRIBUTE worktime = 9,0,17,0");
         assertTrue(client.checkWorktime(630));
         org.junit.Assert.assertFalse(client.checkWorktime(840));
 
@@ -151,7 +151,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
                                        Map.of("workday", "true", "worktime", Boolean.toString(originalExpected)), "catee_worktime");
         useUser("catee_reader", "test-password");
         assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
-        assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE workday = monday");
+        assertInvalidMessageNet("SET_EA_ADMIN", "SET ENV_ATTRIBUTE workday = monday");
         useSuperUser();
         executeNet("SET ENV_ATTRIBUTE workday = " + days[(day + 1) % 7]);
         useUser("catee_reader", "test-password");
@@ -211,7 +211,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
                                            "subnet", "campus", "server_load", "1");
             useUser("catee_reader", "test-password");
             assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
-            assertInvalidMessageNet("Only superusers", "SET ENV_ATTRIBUTE subnet = campus='0.0.0.0/0'");
+            assertInvalidMessageNet("SET_EA_ADMIN", "SET ENV_ATTRIBUTE subnet = campus='0.0.0.0/0'");
             useSuperUser();
             executeNet("SET ENV_ATTRIBUTE subnet = campus='192.0.2.0/24'");
             useUser("catee_reader", "test-password");

@@ -74,10 +74,13 @@ public enum Permission
     DROP_POLICY,
     ALTER_POLICY,
     ENABLE_POLICY,
-    DISABLE_POLICY;
+    DISABLE_POLICY,
+
+    // Enclave-backed environmental administration; append to preserve ordinals.
+    SET_EA_ADMIN;
 
     public static final Set<Permission> ALL =
-            Sets.immutableEnumSet(EnumSet.range(Permission.CREATE, Permission.DISABLE_POLICY));
+            Sets.immutableEnumSet(EnumSet.range(Permission.CREATE, Permission.SET_EA_ADMIN));
     public static final Set<Permission> NONE = ImmutableSet.of();
 
     /**

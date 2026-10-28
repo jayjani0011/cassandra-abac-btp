@@ -20,6 +20,7 @@ public final class CateeAdminPermission
             case REVOKE_RESOURCE_ATTRIBUTE: return 1 << 6;
             case CREATE_POLICY: return 1 << 7;
             case DROP_POLICY: return 1 << 8;
+            case SET_EA_ADMIN: return 1 << 9;
             default: throw new IllegalArgumentException("Unsupported CATEE administrative permission: " + permission);
         }
     }

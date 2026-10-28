@@ -1356,10 +1356,15 @@ revokePermissionsStatement returns [RevokePermissionsStatement stmt]
 abacAdminPrivilegeStatement returns [AbacAdminPrivilegeStatement stmt]
     @init { boolean grant = false; Set<Permission> operations = EnumSet.noneOf(Permission.class); }
     : (K_GRANT { grant = true; } | K_REVOKE)
-      K_ABAC_ADMIN '{' p=permission { operations.add($p.perm); }
-      (',' p=permission { operations.add($p.perm); })* '}'
+      K_ABAC_ADMIN '{' p=cateeAdminPermission { operations.add($p.perm); }
+      (',' p=cateeAdminPermission { operations.add($p.perm); })* '}'
       ( {grant}? K_TO | {!grant}? K_FROM ) target=userOrRoleName
       { $stmt = new AbacAdminPrivilegeStatement(target, operations, grant); }
+    ;
+
+cateeAdminPermission returns [Permission perm]
+    : p=permission { $perm = $p.perm; }
+    | K_SET_EA_ADMIN { $perm = Permission.SET_EA_ADMIN; }
     ;
 
 /**
@@ -2395,6 +2400,7 @@ unreserved_function_keyword returns [String str]
 basic_unreserved_keyword returns [String str]
     : k=( K_ENV_ATTRIBUTE
         | K_ABAC_ADMIN
+        | K_SET_EA_ADMIN
         | K_KEYS
         | K_AS
         | K_CLUSTER

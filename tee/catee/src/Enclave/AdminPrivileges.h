@@ -13,6 +13,8 @@ struct AdminPrivilegeEntry {
 // PATEE's fixed role/mask table, with Cassandra role names instead of role OIDs.
 struct AdminPrivileges {
     static constexpr unsigned max_admins = 32;
+    // Must match CateeAdminPermission.SET_EA_ADMIN on the Java side.
+    static constexpr uint32_t set_ea_admin = 1U << 9;
     AdminPrivilegeEntry entries[max_admins]{};
     unsigned count = 0;
 

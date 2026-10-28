@@ -81,7 +81,7 @@ public class CateeAdministrationTest extends CQLTester
     {
         Permission[] permissions = {Permission.CREATE_ATTRIBUTE, Permission.DROP_ATTRIBUTE, Permission.ALTER_ATTRIBUTE,
             Permission.ASSIGN_USER_ATTRIBUTE, Permission.REVOKE_USER_ATTRIBUTE, Permission.ASSIGN_RESOURCE_ATTRIBUTE,
-            Permission.REVOKE_RESOURCE_ATTRIBUTE, Permission.CREATE_POLICY, Permission.DROP_POLICY};
+            Permission.REVOKE_RESOURCE_ATTRIBUTE, Permission.CREATE_POLICY, Permission.DROP_POLICY, Permission.SET_EA_ADMIN};
         Set<Integer> bits = new HashSet<>();
         for (int i = 0; i < permissions.length; ++i)
         {
@@ -180,6 +180,48 @@ public class CateeAdministrationTest extends CQLTester
             authorizer.allowed = null;
             expectInvalidProvisioning(target, operations, true, "Required CATEE grant update failed");
             expectInvalidProvisioning(target, operations, false, "Required CATEE grant update failed");
+        }
+        finally { DatabaseDescriptor.setRoleManager(previousRoles); }
+    }
+
+    @Test
+    public void environmentalPrivilegeUsesProtectedProvisioningOnly()
+    {
+        for (String query : new String[] {
+            "GRANT ABAC_ADMIN { SET_EA_ADMIN } TO alice",
+            "REVOKE ABAC_ADMIN { SET_EA_ADMIN } FROM alice",
+            "GRANT ABAC_ADMIN { SET_EA_ADMIN, CREATE_POLICY } TO alice"})
+            assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement(query)
+                       instanceof org.apache.cassandra.cql3.statements.AbacAdminPrivilegeStatement);
+        assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement("GRANT set_ea_admin TO alice")
+                   instanceof org.apache.cassandra.cql3.statements.GrantRoleStatement);
+        try
+        {
+            org.apache.cassandra.cql3.QueryProcessor.parseStatement("GRANT SET_EA_ADMIN ON ALL ROLES TO alice");
+            fail("Must not become an ordinary RBAC permission");
+        }
+        catch (org.apache.cassandra.exceptions.SyntaxException expected) { }
+        assertFalse(RoleResource.root().applicablePermissions().contains(Permission.SET_EA_ADMIN));
+        IRoleManager previousRoles = DatabaseDescriptor.getRoleManager();
+        IRoleManager roles = mock(IRoleManager.class);
+        DatabaseDescriptor.setRoleManager(roles);
+        try
+        {
+            when(state.isSuper()).thenReturn(true);
+            RoleResource target = RoleResource.role("alice");
+            when(roles.isExistingRole(target)).thenReturn(true);
+            when(roles.canLogin(target)).thenReturn(true);
+            authorizer.allowed = true;
+            Set<Permission> permissions = Set.of(Permission.SET_EA_ADMIN, Permission.CREATE_POLICY);
+            CateeAdministration.modifyPrivileges(state, target, permissions, true);
+            assertTrue(authorizer.granted);
+            assertEquals(512 | 128, authorizer.observedMask);
+            CateeAdministration.modifyPrivileges(state, target, Set.of(Permission.SET_EA_ADMIN), false);
+            assertFalse(authorizer.granted);
+            assertEquals(512, authorizer.observedMask);
+            when(state.isSuper()).thenReturn(false);
+            try { CateeAdministration.modifyPrivileges(state, target, permissions, true); fail(); }
+            catch (UnauthorizedException expected) { }
         }
         finally { DatabaseDescriptor.setRoleManager(previousRoles); }
     }
