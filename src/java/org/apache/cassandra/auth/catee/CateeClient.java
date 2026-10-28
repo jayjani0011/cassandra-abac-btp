@@ -74,8 +74,8 @@ public final class CateeClient
 
     public void setTimeWindow(int startMinute, int endMinute) throws IOException
     {
-        if (startMinute < 0 || startMinute >= endMinute || endMinute >= 1440)
-            throw new IllegalArgumentException("Window requires 0 <= start < end < 1440");
+        if (startMinute < 0 || startMinute >= endMinute || endMinute > 1440)
+            throw new IllegalArgumentException("Window requires 0 <= start < end <= 1440");
         requireSuccess(request("SET_TIMEWINDOW " + startMinute + " " + endMinute));
     }
 

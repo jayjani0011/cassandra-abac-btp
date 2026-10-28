@@ -105,13 +105,16 @@ class JavaHardwareTest(HardwareBase):
             result = java_set_window(self.path, timeout=2000)
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertEqual("OK HW DEBUG\n", result.stdout)
-            for minute, expected in [(599, "DENY"), (600, "ALLOW"), (659, "ALLOW"), (660, "DENY"), (840, "DENY")]:
+            for minute, expected in [(599, "DENY"), (600, "ALLOW"), (659, "ALLOW"), (660, "ALLOW"), (661, "DENY"), (840, "DENY")]:
                 result = java_client(self.path, minute, 2000)
                 self.assertEqual(0, result.returncode, result.stderr)
                 self.assertEqual(f"{expected} HW DEBUG\n", result.stdout)
-            for start, end in [(-1, 60), (60, 60), (61, 60), (600, 1440)]:
+            for start, end in [(-1, 60), (60, 60), (61, 60), (600, 1441)]:
                 self.assertNotEqual(0, java_set_window(self.path, start, end).returncode)
             self.assertEqual("ALLOW HW DEBUG\n", java_client(self.path, 630, 2000).stdout)
+            self.assertEqual(0, java_set_window(self.path, 0, 1440, 2000).returncode)
+            self.assertEqual("ALLOW HW DEBUG\n", java_client(self.path, 0, 2000).stdout)
+            self.assertEqual("ALLOW HW DEBUG\n", java_client(self.path, 1439, 2000).stdout)
         finally:
             self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 540 1020\n"]))
 
@@ -123,7 +126,7 @@ class JavaHardwareTest(HardwareBase):
                                          "ENV", str(minute), str(expected).lower(), "2000"],
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(0, result.returncode, result.stderr)
-                matched = expected == (540 <= minute < 1020)
+                matched = expected == (540 <= minute <= 1020)
                 self.assertEqual("ALLOW HW DEBUG\n" if matched else "DENY HW DEBUG\n", result.stdout)
 
     def test_java_sets_workdays(self):
@@ -152,7 +155,7 @@ class JavaHardwareTest(HardwareBase):
 
     def test_java_worktime_boundaries(self):
         for minute, expected in [(0, "DENY"), (539, "DENY"), (540, "ALLOW"),
-                                 (840, "ALLOW"), (1019, "ALLOW"), (1020, "DENY"),
+                                 (840, "ALLOW"), (1019, "ALLOW"), (1020, "ALLOW"), (1021, "DENY"),
                                  (1200, "DENY"), (1439, "DENY")]:
             with self.subTest(minute=minute):
                 result = java_client(self.path, minute, 2000)
@@ -192,7 +195,7 @@ class JavaFailureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "absent.sock"
             for start, end, timeout in [(600, 660, 500), (-1, 60, 500), (60, 60, 500),
-                                        (61, 60, 500), (600, 1440, 500), (600, 660, 0)]:
+                                        (61, 60, 500), (600, 1441, 500), (600, 660, 0)]:
                 result = java_set_window(path, start, end, timeout)
                 self.assertNotEqual(0, result.returncode)
                 self.assertEqual("", result.stdout)
