@@ -105,6 +105,8 @@ public final class CateeAdministration
         IAuthorizer authorizer = DatabaseDescriptor.getAuthorizer();
         if (!(authorizer instanceof CassandraAuthorizer) || !((CassandraAuthorizer) authorizer).isCateeEnabled())
         {
+            if (permission == Permission.SET_EA_ADMIN)
+                throw new UnauthorizedException("SET_EA_ADMIN requires CATEE");
             state.ensurePermission(permission, resource);
             return;
         }

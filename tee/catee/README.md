@@ -23,7 +23,8 @@ SET_TIMEWINDOW <startMinute> <endMinute>\n
 The window must satisfy `0 <= start < end < 1440`; invalid updates leave it
 unchanged. The response must be exactly `OK HW DEBUG`. Checks continue to use
 start-inclusive, end-exclusive boundaries. This transport trusts the permitted
-OS UID. Cassandra superusers can configure the same window through CQL:
+OS UID. Cassandra superusers or direct holders of `SET_EA_ADMIN` can configure
+the same window through CQL:
 
 ```cql
 SET ENV_ATTRIBUTE worktime = 9, 0, 17, 0;
@@ -32,9 +33,9 @@ SET ENV_ATTRIBUTE worktime = 9, 0, 17, 0;
 The values are start hour, start minute, end hour, end minute. Hours must be 0–23,
 minutes 0–59, and start must precede end; overnight windows are unsupported.
 The window is node-local and applies to every CATEE worktime condition.
-CATEE must be enabled. Invalid updates, unsupported attributes, non-superusers,
+CATEE must be enabled. Invalid updates, unsupported attributes, callers without authority,
 and required service failures reject the command. Updates are audited as
-`SET_ENV_ATTRIBUTE`. Delegated configuration privileges remain a later step.
+`SET_ENV_ATTRIBUTE`. Only superusers may grant or revoke the configuration privilege.
 Window updates are sealed together with administrative grants and deletion
 markers before success is returned. Startup restores the configured window from
 that same state file; a failed save stops the service.
@@ -252,12 +253,12 @@ slot; a full 32-entry table rejects it without changing state.
 
 Successful operations use the same seal/write/fsync/rename/directory-fsync path as
 admin updates. Persistence failure returns ERROR and stops the service. The new
-version-5 sealed state includes named subnets, working days, the working-hours window, grants
+version-6 sealed state includes named subnets, working days, the working-hours window, grants
 and deletion markers. Versions 1 and 2 restore their existing grants/markers and
 use the 09:00–17:00 default window. Version 3 preserves its window too. Versions
 1–3 receive Monday–Friday working days; version 4 preserves its days too.
-Versions 1–4 start with no subnets; the next successful mutation writes version 5. Keep the same development signing key and compatible SGX sealing
-identity. Older binaries cannot read version 5; do not
+Versions 1–4 start with no subnets; the next successful mutation writes version 6. Keep the same development signing key and compatible SGX sealing
+identity. Older binaries cannot read version 6; do not
 downgrade them onto updated state.
 The `--init` option is never a migration or recovery mechanism.
 
@@ -336,9 +337,8 @@ mode the original scoped `ClientState.ensurePermission` check is used unchanged.
 General data-access authorization and ordinary permission GRANT/REVOKE are not
 changed by this hook.
 
-**Still deferred:** delegated environment-configuration privileges and additional
-environmental settings. Working-hours CQL configuration is available as described
-above.
+Delegated environmental configuration is available through `SET_EA_ADMIN`, as
+described below. Additional environmental operations remain future work.
 Protected administrative grants now use the CQL commands above; the Java client
 remains a lower-level transport interface.
 
@@ -462,7 +462,7 @@ Following PATEE, configure a named set with
 The enclave stores seven 0/1 values indexed Sunday=0 through Saturday=6, defaults
 to Monday-Friday, and compares the supplied day with the rule's expected Boolean.
 Day and time checks are combined in one ECALL. Duplicate day names are harmless;
-unknown names are rejected before sending. Configuration remains superuser-only.
+unknown names are rejected before sending. Configuration requires superuser status or a direct `SET_EA_ADMIN` grant.
 `SET_WORKDAY <sun> <mon> <tue> <wed> <thu> <fri> <sat>` uses seven 0/1 fields.
 Subnet evaluation is implemented (see below). Sealing is added in catee/administration.
 
@@ -489,3 +489,32 @@ Equality satisfies the threshold. Load-only rules do not require the SGX service
 Multiple subnet pairs are validated before sending, then applied in order as in
 PATEE; a later capacity/persistence failure can leave earlier pairs applied.
 Subnets share the sealed snapshot with days, window, grants and deletion markers.
+
+## Delegated environmental administration
+
+Following PATEE's published privilege model:
+
+```cql
+GRANT ABAC_ADMIN { SET_EA_ADMIN } TO alice;
+REVOKE ABAC_ADMIN { SET_EA_ADMIN } FROM alice;
+```
+
+Only superusers may issue these grant/revoke commands. Existing target validation
+still requires a login role for a new grant. Holders may configure `workday`,
+`worktime` and `subnet`, but cannot delegate their authority or acquire other ABAC
+administrative privileges. The check uses the primary role directly, not inherited
+roles or ordinary RBAC. It is repeated on execution; required check/update failures
+reject the operation. Superusers retain their existing authority, although an update
+still requires a functioning SGX service. Grant checks and updates remain separate
+requests, as in PATEE; this is not a transaction with concurrent revocations.
+
+The privilege uses bit 9 without renumbering existing masks. Version 6 uses the
+same state layout as version 5. On restoration of versions 1–5, bit 9 is cleared
+because those files could contain arbitrary raw bits without this privilege's
+meaning. Other rights/configuration are retained; read-only restoration does not
+rewrite the file. An explicit new grant is required, and the next successful
+mutation saves version 6. Version-6 grants survive restart. Existing role-deletion
+cleanup clears this bit along with all other privileges.
+
+This follows the paper's `SET_EA_ADMIN` model rather than copying the reference
+SetEnvAttribute handler's apparent CREATE_UA_ADMIN permission mismatch.
