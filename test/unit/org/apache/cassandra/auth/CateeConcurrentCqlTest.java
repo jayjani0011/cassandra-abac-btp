@@ -199,4 +199,141 @@ public class CateeConcurrentCqlTest extends CateeCqlTestSupport
         useSuperUser();
         executeNet("DROP ATTRIBUTE " + prefix + "restored");
     }
+    @Test
+    public void realClientAddressesDoNotShareSubnetDecisions() throws Throwable
+    {
+        String reader = prepareReader();
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE subnet = source_ip='127.0.0.2/32'");
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("subnet", "source_ip"), prefix + "allow");
+        List<com.datastax.driver.core.Cluster> clusters = new ArrayList<>();
+        List<Session> sessions = new ArrayList<>();
+        try
+        {
+            for (String ip : new String[] {"127.0.0.2", "127.0.0.3"})
+            {
+                java.net.InetSocketAddress source = new java.net.InetSocketAddress(ip, 0);
+                com.datastax.driver.core.Cluster cluster = com.datastax.driver.core.Cluster.builder()
+                    .addContactPoint(nativeAddr.getHostAddress()).withPort(nativePort)
+                    .withCredentials(reader, "test-password").withoutJMXReporting()
+                    .withNettyOptions(new com.datastax.driver.core.NettyOptions() {
+                        public void afterBootstrapInitialized(com.datastax.shaded.netty.bootstrap.Bootstrap bootstrap)
+                        { bootstrap.localAddress(source); }
+                        public void onClusterClose(com.datastax.shaded.netty.channel.EventLoopGroup group)
+                        { group.shutdownGracefully(0, 0, TimeUnit.SECONDS).syncUninterruptibly(); }
+                    }).build();
+                clusters.add(cluster);
+                sessions.add(cluster.connect());
+            }
+            String query = "SELECT id FROM " + KEYSPACE + "." + currentTable();
+            for (int phase = 0; phase < 3; ++phase)
+            {
+                int allowed = phase % 2;
+                executeNet("SET ENV_ATTRIBUTE subnet = source_ip='127.0.0." + (allowed + 2) + "/32'");
+                wave(sessions, (session, worker) -> {
+                    for (int call = 0; call < 30; ++call) assertQuery(session, query, worker == allowed);
+                });
+                restartService();
+                for (int i = 0; i < sessions.size(); ++i) assertQuery(sessions.get(i), query, i == allowed);
+            }
+        }
+        finally
+        {
+            for (Session session : sessions) session.close();
+            for (com.datastax.driver.core.Cluster cluster : clusters) cluster.close();
+        }
+    }
+
+    @Test
+    public void environmentalUpdatesOverlapQueriesAndPersistFinalDecisions() throws Throwable
+    {
+        String reader = prepareReader();
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE subnet = concurrent_net='127.0.0.1/32'");
+        executeNet("SET ENV_ATTRIBUTE worktime = 0,0,23,59");
+        String today = java.time.LocalDate.now().getDayOfWeek().toString().toLowerCase(java.util.Locale.ROOT);
+        executeNet("SET ENV_ATTRIBUTE workday = " + today);
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("workday", "true", "worktime", "true", "subnet", "concurrent_net"), prefix + "allow");
+        List<Session> clients = new ArrayList<>();
+        try
+        {
+            clients.add(sessionNet().getCluster().connect());
+            useUser(reader, "test-password");
+            for (int i = 0; i < 4; ++i) clients.add(sessionNet().getCluster().connect());
+            String query = "SELECT id FROM " + KEYSPACE + "." + currentTable();
+            for (int round = 0; round < 3; ++round)
+            {
+                wave(clients, (session, worker) -> {
+                    if (worker == 0)
+                    {
+                        for (int change = 0; change < 12; ++change)
+                        {
+                            boolean allow = change % 2 != 0;
+                            session.execute("SET ENV_ATTRIBUTE subnet = concurrent_net='" +
+                                            (allow ? "127.0.0.1/32" : "192.0.2.0/24") + "'");
+                            session.execute("SET ENV_ATTRIBUTE worktime = " +
+                                            (allow ? "0,0,23,59" : windowStart + ",0," + (windowStart + 1) + ",0"));
+                            session.execute("SET ENV_ATTRIBUTE workday = " + (allow ? today :
+                                java.time.LocalDate.now().plusDays(1).getDayOfWeek().toString().toLowerCase(java.util.Locale.ROOT)));
+                        }
+                    }
+                    else for (int call = 0; call < 100; ++call)
+                    {
+                        // Either decision is valid while independent settings are changing.
+                        // Transport errors, timeouts and malformed results must still fail the test.
+                        try { assertEquals(1, session.execute(query).one().getInt("id")); }
+                        catch (UnauthorizedException expected)
+                        { assertTrue(expected.getMessage(), expected.getMessage().contains("has no SELECT permission")); }
+                    }
+                });
+                for (int i = 1; i < clients.size(); ++i) assertQuery(clients.get(i), query, true);
+                restartService();
+                for (int i = 1; i < clients.size(); ++i) assertQuery(clients.get(i), query, true);
+                clients.get(0).execute("SET ENV_ATTRIBUTE subnet = concurrent_net='192.0.2.0/24'");
+                for (int i = 1; i < clients.size(); ++i) assertQuery(clients.get(i), query, false);
+            }
+        }
+        finally { for (Session client : clients) client.close(); }
+    }
+
+    @Test
+    public void multiSubnetCapacityFailurePreservesAcknowledgedEarlierUpdates() throws Throwable
+    {
+        useSuperUser();
+        CateeClient enclave = new CateeClient(socket, 2000);
+        java.nio.file.Path state = java.nio.file.Path.of(socket + ".sealed");
+        byte[] previous = java.nio.file.Files.readAllBytes(state);
+        try
+        {
+            String existing = prefix + "existing";
+            executeNet("SET ENV_ATTRIBUTE subnet = " + existing + "='127.0.0.1/32'");
+            boolean full = false;
+            for (int i = 0; i < 33; ++i)
+            {
+                try { enclave.setSubnet(new org.apache.cassandra.auth.catee.CateeSubnet(prefix + "fill" + i, "10.0.0.0/8")); }
+                catch (java.io.IOException expected) { full = true; break; }
+            }
+            assertTrue("Expected bounded subnet capacity", full);
+            String missing = prefix + "overflow";
+            assertInvalidMessageNet("update failed", "SET ENV_ATTRIBUTE subnet = " + existing +
+                                   "='192.0.2.0/24', " + missing + "='10.0.0.0/8'");
+            assertTrue("Validation failure must not kill the service", service.isAlive());
+            assertFalse(enclave.subnetExists(missing));
+            assertTrue(enclave.checkEnvironment(0, 0, 0xc0000201L, existing, false, false, false, false, true));
+            assertFalse(enclave.checkEnvironment(0, 0, 0x7f000001L, existing, false, false, false, false, true));
+            restartService();
+            assertFalse(enclave.subnetExists(missing));
+            assertTrue(enclave.checkEnvironment(0, 0, 0xc0000201L, existing, false, false, false, false, true));
+        }
+        finally
+        {
+            // Restore this isolated fixture's snapshot; a full table must not affect other tests.
+            terminateService(false);
+            java.nio.file.Files.write(state, previous);
+            restartService();
+        }
+    }
+
 }

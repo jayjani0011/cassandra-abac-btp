@@ -20,7 +20,7 @@ the test data directory. Do not run another Ant test job at the same time.
 | Authorization | RBAC/ABAC union, ABAC deny behavior, expected true/false, cache bypass and required-service failure |
 | Administration and role lifecycle | Supported commands, direct grants, validation, ordering, failures at each cleanup stage, retries, recreation and concurrent mutations |
 | Sequential hardware CQL | Real Cassandra requests through IPC/ECALLs, configuration affecting data access, restart persistence, failed saves, existing sessions and service failure |
-| Concurrent hardware CQL | Eight independent authenticated sessions; 2,400 reads over allow/revoke/regrant phases; 320 concurrent administrative updates; abrupt service death and recovery |
+| Concurrent hardware CQL | Eight independent authenticated sessions; 2,400 reads over allow/revoke/regrant phases; 320 concurrent administrative updates; abrupt service death and recovery; source-bound IPv4 clients; overlapping environmental updates and reads |
 | Sealed state | Versions 1/2/3/4/5/6/7, grant/marker/window/workday restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
 | Persistence fault injection | All seven mutable operations at nine named host I/O/error/exit boundaries (63 subcases) |
 | Evaluation tooling | Bad/missing samples, statistical fixtures, smoke labeling, CSV/image export, overwrite refusal and historical-output protection |
@@ -90,3 +90,18 @@ survives restart. Versions 3–6 keep their window numbers; versions 1–2 recei
 the full-day default. Version-6 SET_EA_ADMIN remains intact. Benchmarks explicitly
 configure 09:00–17:00 inclusive outside timing, record that window in metadata,
 and use matching Java/Python/native comparisons. Historical results are unchanged.
+
+Additional hardware CQL coverage uses two actual loopback source addresses
+(127.0.0.2 and 127.0.0.3) for the same login role. Alternating /32 subnet grants
+must reverse the decisions on existing sessions, including after service restart.
+A bounded mixed test overlaps 1,200 reads with 108 environmental updates over
+three rounds, checks final allow/deny decisions and restores sealed state on
+restart. During overlapping independent updates either authorization decision is
+valid; after acknowledged updates, the expected decision is asserted explicitly.
+These checks are correctness stress, not throughput measurements.
+
+A multi-subnet CQL command at table capacity is deliberately non-atomic: an
+update to an existing subnet can persist before adding a new subnet fails.
+The test verifies that the earlier update survives restart, the rejected entry
+is absent and the service stays available. It restores its isolated fixture
+snapshot afterward so capacity exhaustion does not contaminate other tests.
