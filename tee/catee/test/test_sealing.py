@@ -207,7 +207,7 @@ class SealingTest(unittest.TestCase):
                        check=True, capture_output=True, timeout=5)
 
     @staticmethod
-    def payload(version=5, entries=(), count=None, window=(540, 1020), days=(0,1,1,1,1,1,0), subnets=(), subnet_count=None):
+    def payload(version=6, entries=(), count=None, window=(540, 1020), days=(0,1,1,1,1,1,0), subnets=(), subnet_count=None):
         legacy = version == 1
         packed = bytearray(struct.pack("<I", version))
         for role, mask, pending in entries:
@@ -382,8 +382,30 @@ class SealingTest(unittest.TestCase):
         self.start()
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 630 167772161 63616d707573 1 1 1 1 1\n"]))
 
+    def test_old_unknown_bit_does_not_become_environmental_authority(self):
+        for version in range(1, 6):
+            with self.subTest(version=version):
+                self.seal_payload(self.payload(version=version, entries=[(b"alice", 513, 0)]))
+                original = self.state.read_bytes()
+                process = self.start()
+                self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+                self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 512\n"]))
+                self.assertEqual(original, self.state.read_bytes())
+                self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 512\n"]))
+                self.stop(process)
+                process = self.start()
+                self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 512\n"]))
+                self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+                self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"REVOKE_ADMIN_PRIV 616c696365 512\n"]))
+                self.stop(process)
+                process = self.start()
+                self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 512\n"]))
+                self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+                self.stop(process)
+                self.state.unlink()
+
     def test_authenticated_invalid_payloads_rejected_without_reset(self):
-        cases = [self.payload(version=6), self.payload(subnet_count=33),
+        cases = [self.payload(version=7), self.payload(subnet_count=33),
                  self.payload(subnets=[(b"",0,0)]), self.payload(subnets=[(b"x"*64,0,0)]),
                  self.payload(subnets=[(b"a",0,33)]), self.payload(subnets=[(b"a",1,0)]),
                  self.payload(subnets=[(b"a",0,0),(b"a",0,0)]), self.payload(days=(0,1,1,1,1,1,2)), self.payload(count=33),

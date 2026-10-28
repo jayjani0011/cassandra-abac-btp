@@ -81,7 +81,7 @@ public class CateeAdministrationTest extends CQLTester
     {
         Permission[] permissions = {Permission.CREATE_ATTRIBUTE, Permission.DROP_ATTRIBUTE, Permission.ALTER_ATTRIBUTE,
             Permission.ASSIGN_USER_ATTRIBUTE, Permission.REVOKE_USER_ATTRIBUTE, Permission.ASSIGN_RESOURCE_ATTRIBUTE,
-            Permission.REVOKE_RESOURCE_ATTRIBUTE, Permission.CREATE_POLICY, Permission.DROP_POLICY};
+            Permission.REVOKE_RESOURCE_ATTRIBUTE, Permission.CREATE_POLICY, Permission.DROP_POLICY, Permission.SET_EA_ADMIN};
         Set<Integer> bits = new HashSet<>();
         for (int i = 0; i < permissions.length; ++i)
         {
