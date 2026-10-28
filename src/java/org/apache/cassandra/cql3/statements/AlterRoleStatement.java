@@ -20,6 +20,7 @@ package org.apache.cassandra.cql3.statements;
 import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.AuthenticatedUser;
+import org.apache.cassandra.auth.CateeAdministration;
 import org.apache.cassandra.auth.CIDRPermissions;
 import org.apache.cassandra.auth.DCPermissions;
 import org.apache.cassandra.auth.IRoleManager;
@@ -129,6 +130,18 @@ public class AlterRoleStatement extends AuthenticationStatement
     }
 
     public ResultMessage execute(ClientState state) throws RequestValidationException, RequestExecutionException
+    {
+        return CateeAdministration.withRoleLifecycle(() -> {
+            if (CateeAdministration.isEnabled())
+            {
+                validate(state);
+                authorize(state);
+            }
+            return executeRoleChange(state);
+        });
+    }
+
+    private ResultMessage executeRoleChange(ClientState state) throws RequestValidationException, RequestExecutionException
     {
         if (ifExists && !DatabaseDescriptor.getRoleManager().isExistingRole(role))
             return null;

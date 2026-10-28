@@ -20,6 +20,7 @@ package org.apache.cassandra.cql3.statements.schema;
 import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.auth.CateeAdministration;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryOptions;
 import org.apache.cassandra.cql3.QueryProcessor;
@@ -49,7 +50,7 @@ public class DropRuleStatement extends AlterSchemaStatement
 
     public void authorize(ClientState state) throws RequestValidationException
     {
-        state.ensurePermission(Permission.DROP_POLICY, org.apache.cassandra.auth.RoleResource.root());
+        CateeAdministration.ensurePermission(state, Permission.DROP_POLICY, org.apache.cassandra.auth.RoleResource.root());
     }
 
     @Override

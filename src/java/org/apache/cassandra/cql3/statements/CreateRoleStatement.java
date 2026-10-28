@@ -21,6 +21,7 @@ import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
 
 import org.apache.cassandra.auth.AuthenticatedUser;
+import org.apache.cassandra.auth.CateeAdministration;
 import org.apache.cassandra.auth.CIDRPermissions;
 import org.apache.cassandra.auth.DCPermissions;
 import org.apache.cassandra.auth.IRoleManager;
@@ -95,6 +96,18 @@ public class CreateRoleStatement extends AuthenticationStatement
 
     public ResultMessage execute(ClientState state) throws RequestExecutionException, RequestValidationException
     {
+        return CateeAdministration.withRoleLifecycle(() -> {
+            if (CateeAdministration.isEnabled())
+            {
+                validate(state);
+                authorize(state);
+            }
+            return executeRoleChange(state);
+        });
+    }
+
+    private ResultMessage executeRoleChange(ClientState state) throws RequestExecutionException, RequestValidationException
+    {
         // not rejected in validate()
         if (ifNotExists && DatabaseDescriptor.getRoleManager().isExistingRole(role))
             return null;
@@ -111,6 +124,8 @@ public class CreateRoleStatement extends AuthenticationStatement
 
         opts.getPassword().ifPresent(password -> Guardrails.password.guard(password, state));
 
+        if (CateeAdministration.isEnabled())
+            CateeAdministration.deleteRole(state, role);
         DatabaseDescriptor.getRoleManager().createRole(state.getUser(), role, opts);
         if (DatabaseDescriptor.getNetworkAuthorizer().requireAuthorization())
         {

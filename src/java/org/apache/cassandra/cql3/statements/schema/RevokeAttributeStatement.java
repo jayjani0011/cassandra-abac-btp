@@ -21,6 +21,7 @@ import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.IResource;
 import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.auth.CateeAdministration;
 import org.apache.cassandra.cql3.RoleName;
 import org.apache.cassandra.cql3.CQLStatement;
 import org.apache.cassandra.cql3.QueryOptions;
@@ -58,11 +59,11 @@ public class RevokeAttributeStatement extends AlterSchemaStatement
     {
         if (attributeType.equalsIgnoreCase("USER"))
         {
-            state.ensurePermission(Permission.REVOKE_USER_ATTRIBUTE, org.apache.cassandra.auth.RoleResource.role(name));
+            CateeAdministration.ensurePermission(state, Permission.REVOKE_USER_ATTRIBUTE, org.apache.cassandra.auth.RoleResource.role(name));
         }
         else // RESOURCE
         {
-            state.ensurePermission(Permission.REVOKE_RESOURCE_ATTRIBUTE, resource);
+            CateeAdministration.ensurePermission(state, Permission.REVOKE_RESOURCE_ATTRIBUTE, resource);
         }
     }
 

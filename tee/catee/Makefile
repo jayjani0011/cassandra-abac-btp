@@ -35,7 +35,7 @@ $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h &: src/Enclave/Enc
 $(BUILD)/Enclave_t.o: $(BUILD)/trusted/Enclave_t.c $(BUILD)/trusted/Enclave_t.h
 	$(CC) $(TRUSTED_FLAGS) -c $< -o $@
 
-$(BUILD)/Enclave.o: src/Enclave/Enclave.cpp src/Enclave/SubnetConfiguration.h $(BUILD)/trusted/Enclave_t.h
+$(BUILD)/Enclave.o: src/Enclave/Enclave.cpp src/Enclave/AdminPrivileges.h src/Enclave/SubnetConfiguration.h $(BUILD)/trusted/Enclave_t.h
 	$(CXX) $(TRUSTED_FLAGS) -std=c++11 -nostdinc++ -I$(SGX_SDK)/include/libcxx -c $< -o $@
 
 $(BUILD)/Enclave_u.o: $(BUILD)/untrusted/Enclave_u.c $(BUILD)/untrusted/Enclave_u.h
@@ -61,8 +61,24 @@ $(KEY):
 $(BUILD)/enclave.signed.so: $(BUILD)/enclave.so src/Enclave/Enclave.config.xml $(KEY)
 	$(SIGNER) sign -key $(KEY) -enclave $< -out $@ -config src/Enclave/Enclave.config.xml
 
-test: all
+test: all test-admin test-admin-hw
 	python3 test/test_service.py
+	python3 test/test_sealing.py
+
+.PHONY: test-admin
+$(BUILD)/test-admin-privileges: test/test_admin_privileges.cpp src/Enclave/AdminPrivileges.h
+	mkdir -p $(BUILD)
+	$(CXX) -std=c++11 -Wall -Wextra -Werror -Isrc/Enclave $< -o $@
+
+test-admin: $(BUILD)/test-admin-privileges
+	./$(BUILD)/test-admin-privileges
+
+.PHONY: test-admin-hw
+$(BUILD)/test-admin-ecalls: test/test_admin_ecalls.cpp $(BUILD)/Enclave_u.o
+	$(CXX) $(HOST_FLAGS) -std=c++11 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
+
+test-admin-hw: $(BUILD)/test-admin-ecalls $(BUILD)/enclave.signed.so
+	./$(BUILD)/test-admin-ecalls $(BUILD)/enclave.signed.so
 
 # Preserve the local development key; do not delete persistent material on rebuild.
 clean:
@@ -91,6 +107,44 @@ java-client: $(JAVA_JARS)
 
 test-java: all java-client
 	python3 test/test_java_client.py
+
+# Separate test enclave, signed with the local development key, for v1 migration
+# and authenticated-but-invalid payloads. Never linked into the service enclave.
+$(BUILD)/fixture:
+	mkdir -p $@
+
+$(BUILD)/fixture/Fixture_t.c $(BUILD)/fixture/Fixture_t.h $(BUILD)/fixture/Fixture_u.c $(BUILD)/fixture/Fixture_u.h &: test/sealing_fixture/Fixture.edl | $(BUILD)/fixture
+	$(EDGER) --trusted $< --search-path $(SGX_SDK)/include --trusted-dir $(BUILD)/fixture
+	$(EDGER) --untrusted $< --search-path $(SGX_SDK)/include --untrusted-dir $(BUILD)/fixture
+
+$(BUILD)/fixture/Fixture_t.o: $(BUILD)/fixture/Fixture_t.c $(BUILD)/fixture/Fixture_t.h
+	$(CC) $(TRUSTED_FLAGS) -I$(BUILD)/fixture -c $< -o $@
+
+$(BUILD)/fixture/Fixture.o: test/sealing_fixture/Fixture.cpp $(BUILD)/fixture/Fixture_t.h | $(BUILD)/fixture
+	$(CXX) $(TRUSTED_FLAGS) -I$(BUILD)/fixture -std=c++11 -nostdinc++ -I$(SGX_SDK)/include/libcxx -c $< -o $@
+
+$(BUILD)/fixture/Fixture_u.o: $(BUILD)/fixture/Fixture_u.c $(BUILD)/fixture/Fixture_u.h
+	$(CC) $(HOST_FLAGS) -I$(BUILD)/fixture -c $< -o $@
+
+$(BUILD)/fixture/enclave.so: $(BUILD)/fixture/Fixture.o $(BUILD)/fixture/Fixture_t.o src/Enclave/Enclave.lds
+	$(CXX) -m64 $(filter %.o,$^) -o $@ $(MITIGATION_LDFLAGS) \
+	    -Wl,-z,relro,-z,now,-z,noexecstack -nostdlib -nodefaultlibs -nostartfiles \
+	    -L$(SGX_TRUSTED_LIBRARY_PATH) -Wl,--no-undefined \
+	    -Wl,--whole-archive -lsgx_trts -Wl,--no-whole-archive \
+	    -Wl,--start-group -lsgx_tstdc -lsgx_tcrypto -lsgx_tservice -Wl,--end-group \
+	    -Wl,-Bstatic,-Bsymbolic,-pie,-eenclave_entry,--export-dynamic \
+	    -Wl,--defsym,__ImageBase=0,--gc-sections,--version-script=src/Enclave/Enclave.lds
+
+$(BUILD)/fixture/enclave.signed.so: $(BUILD)/fixture/enclave.so src/Enclave/Enclave.config.xml $(KEY)
+	$(SIGNER) sign -key $(KEY) -enclave $< -out $@ -config src/Enclave/Enclave.config.xml
+
+$(BUILD)/fixture/seal-fixture: test/sealing_fixture/seal_fixture.cpp $(BUILD)/fixture/Fixture_u.o
+	$(CXX) $(HOST_FLAGS) -I$(BUILD)/fixture -std=c++11 $^ -L$(SGX_SDK)/lib64 -lsgx_urts -lpthread -o $@
+
+.PHONY: sealing-fixture
+sealing-fixture: $(BUILD)/fixture/enclave.signed.so $(BUILD)/fixture/seal-fixture
+
+test: sealing-fixture
 
 .PHONY: test-environment-hw
 $(BUILD)/test-environment-ecalls: test/test_environment_ecalls.cpp $(BUILD)/Enclave_u.o

@@ -28,7 +28,19 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
 
     private static class ConfigurationAuthorizer extends CassandraAuthorizer
     {
-        int calls, start, end, failure;
+        int calls, start, end, failure, checks;
+        boolean enabled = true;
+        Boolean allowed = false;
+        AuthenticatedUser checkedUser;
+        boolean isCateeEnabled() { return enabled; }
+        boolean checkCateeAdminPrivilege(AuthenticatedUser user, int mask) throws IOException
+        {
+            checks++;
+            checkedUser = user;
+            assertEquals(512, mask);
+            if (allowed == null) throw new IOException("Service unavailable");
+            return allowed;
+        }
         byte[] days;
         org.apache.cassandra.auth.catee.CateeSubnet subnet;
         public void setCateeSubnet(org.apache.cassandra.auth.catee.CateeSubnet value) throws IOException
@@ -62,6 +74,7 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
         DatabaseDescriptor.setAuthorizer(authorizer);
         state = mock(ClientState.class);
         when(state.isSuper()).thenReturn(true);
+        when(state.getUser()).thenReturn(new AuthenticatedUser("environment_admin"));
     }
 
     @After
@@ -185,6 +198,49 @@ public class CateeEnvironmentConfigurationTest extends CQLTester
         when(state.isSuper()).thenReturn(false);
         try { parse("SET ENV_ATTRIBUTE subnet = campus='0.0.0.0/0'").execute(state); fail(); }
         catch (UnauthorizedException expected) { }
+    }
+
+    @Test
+    public void delegatesAllThreeSettingsAndRevocationTakesEffect()
+    {
+        when(state.isSuper()).thenReturn(false);
+        authorizer.allowed = true;
+        parse("SET ENV_ATTRIBUTE worktime = 9,0,17,0").execute(state);
+        parse("SET ENV_ATTRIBUTE workday = monday,friday").execute(state);
+        parse("SET ENV_ATTRIBUTE subnet = campus='10.0.0.0/8'").execute(state);
+        assertEquals(3, authorizer.calls);
+        assertEquals(3, authorizer.checks);
+        assertEquals("environment_admin", authorizer.checkedUser.getPrimaryRole().getRoleName());
+        verify(state, never()).ensurePermission(org.mockito.ArgumentMatchers.any(Permission.class), org.mockito.ArgumentMatchers.any(IResource.class));
+        authorizer.allowed = false;
+        try { configure("9,0,17,0"); fail(); }
+        catch (UnauthorizedException expected) { }
+        assertEquals(3, authorizer.calls);
+        authorizer.allowed = null;
+        try { parse("SET ENV_ATTRIBUTE workday = monday").execute(state); fail(); }
+        catch (UnauthorizedException expected) { assertTrue(expected.getMessage().contains("administration check failed")); }
+        assertEquals(3, authorizer.calls);
+        when(state.isSuper()).thenReturn(true);
+        int checks = authorizer.checks;
+        configure("9,0,17,0");
+        assertEquals(checks, authorizer.checks);
+        assertEquals(4, authorizer.calls);
+    }
+
+    @Test
+    public void environmentalDelegationNeverUsesNativeRbacFallback()
+    {
+        when(state.isSuper()).thenReturn(false);
+        authorizer.allowed = true;
+        authorizer.enabled = false;
+        try { parse("SET ENV_ATTRIBUTE workday = monday").execute(state); fail(); }
+        catch (UnauthorizedException expected) { }
+        DatabaseDescriptor.setAuthorizer(new AllowAllAuthorizer());
+        try { parse("SET ENV_ATTRIBUTE workday = monday").execute(state); fail(); }
+        catch (UnauthorizedException expected) { }
+        assertEquals(0, authorizer.calls);
+        assertEquals(0, authorizer.checks);
+        verify(state, never()).ensurePermission(org.mockito.ArgumentMatchers.any(Permission.class), org.mockito.ArgumentMatchers.any(IResource.class));
     }
 
     @Test

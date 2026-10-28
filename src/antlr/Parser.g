@@ -238,6 +238,7 @@ options {
 cqlStatement returns [CQLStatement.Raw stmt]
     @after{ if (stmt != null) stmt.setBindVariables(bindVariables); }
     : env=setEnvironmentAttributeStatement { $stmt = env; }
+    | catee=abacAdminPrivilegeStatement      { $stmt = catee; }
     | st1= selectStatement                 { $stmt = st1; }
     | st2= insertStatement                 { $stmt = st2; }
     | st3= updateStatement                 { $stmt = st3; }
@@ -1351,6 +1352,21 @@ revokePermissionsStatement returns [RevokePermissionsStatement stmt]
       { $stmt = new RevokePermissionsStatement(filterPermissions($permissionOrAll.perms, $resource.res), $resource.res, revokee); }
     ;
 
+/** PATEE-style protected administrative grants. */
+abacAdminPrivilegeStatement returns [AbacAdminPrivilegeStatement stmt]
+    @init { boolean grant = false; Set<Permission> operations = EnumSet.noneOf(Permission.class); }
+    : (K_GRANT { grant = true; } | K_REVOKE)
+      K_ABAC_ADMIN '{' p=cateeAdminPermission { operations.add($p.perm); }
+      (',' p=cateeAdminPermission { operations.add($p.perm); })* '}'
+      ( {grant}? K_TO | {!grant}? K_FROM ) target=userOrRoleName
+      { $stmt = new AbacAdminPrivilegeStatement(target, operations, grant); }
+    ;
+
+cateeAdminPermission returns [Permission perm]
+    : p=permission { $perm = $p.perm; }
+    | K_SET_EA_ADMIN { $perm = Permission.SET_EA_ADMIN; }
+    ;
+
 /**
  * GRANT ROLE <rolename> TO <grantee>
  */
@@ -2383,6 +2399,8 @@ unreserved_function_keyword returns [String str]
 
 basic_unreserved_keyword returns [String str]
     : k=( K_ENV_ATTRIBUTE
+        | K_ABAC_ADMIN
+        | K_SET_EA_ADMIN
         | K_KEYS
         | K_AS
         | K_CLUSTER

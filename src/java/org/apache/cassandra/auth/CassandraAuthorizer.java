@@ -110,6 +110,29 @@ public class CassandraAuthorizer implements IAuthorizer
                                            conditions.containsKey("subnet"));
     }
 
+    boolean checkCateeAdminPrivilege(AuthenticatedUser user, int mask) throws IOException
+    {
+        return cateeClient.checkAdminPrivilege(user.getPrimaryRole().getRoleName(), mask);
+    }
+
+    void modifyCateeAdminPrivilege(String role, int mask, boolean grant) throws IOException
+    {
+        if (grant)
+            cateeClient.grantAdminPrivilege(role, mask);
+        else
+            cateeClient.revokeAdminPrivilege(role, mask);
+    }
+
+    void beginCateeRoleDeletion(String role) throws IOException
+    {
+        cateeClient.beginRoleDeletion(role);
+    }
+
+    void finishCateeRoleDeletion(String role) throws IOException
+    {
+        cateeClient.finishRoleDeletion(role);
+    }
+
     private boolean checkCateeEnvironment(Map<String, String> conditions, InetAddress address) throws IOException
     {
         if (!conditions.containsKey("subnet")) return checkCateeEnvironment(conditions);
@@ -467,6 +490,7 @@ public class CassandraAuthorizer implements IAuthorizer
         }
         catch (RequestExecutionException | RequestValidationException e)
         {
+            if (isCateeEnabled()) throw e;
             logger.warn(String.format("CassandraAuthorizer failed to revoke all permissions of %s", revokee.getRoleName()), e);
         }
     }
@@ -505,6 +529,7 @@ public class CassandraAuthorizer implements IAuthorizer
         }
         catch (RequestExecutionException | RequestValidationException e)
         {
+            if (isCateeEnabled() && droppedResource instanceof RoleResource) throw e;
             logger.warn(String.format("CassandraAuthorizer failed to revoke all permissions on %s", droppedResource), e);
         }
     }

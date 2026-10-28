@@ -6,14 +6,16 @@ import org.apache.cassandra.auth.catee.CateeSubnet;
 import org.apache.cassandra.audit.AuditLogContext;
 import org.apache.cassandra.audit.AuditLogEntryType;
 import org.apache.cassandra.auth.CassandraAuthorizer;
+import org.apache.cassandra.auth.CateeAdministration;
+import org.apache.cassandra.auth.Permission;
+import org.apache.cassandra.auth.RoleResource;
 import org.apache.cassandra.auth.IAuthorizer;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.InvalidRequestException;
-import org.apache.cassandra.exceptions.UnauthorizedException;
 import org.apache.cassandra.service.ClientState;
 import org.apache.cassandra.transport.messages.ResultMessage;
 
-/** PATEE-style environmental configuration; supports working days and hours. */
+/** PATEE-style protected environmental configuration. */
 public final class SetEnvironmentAttributeStatement extends AuthenticationStatement
 {
     private final String attribute;
@@ -29,7 +31,7 @@ public final class SetEnvironmentAttributeStatement extends AuthenticationStatem
     {
         state.ensureNotAnonymous();
         if (!state.isSuper())
-            throw new UnauthorizedException("Only superusers may configure CATEE environmental attributes");
+            CateeAdministration.ensurePermission(state, Permission.SET_EA_ADMIN, RoleResource.root());
     }
 
     public void validate(ClientState state)

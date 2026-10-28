@@ -76,8 +76,56 @@ public final class CateeClient
     {
         if (startMinute < 0 || startMinute >= endMinute || endMinute > 1440)
             throw new IllegalArgumentException("Window requires 0 <= start < end <= 1440");
-        if (!request("SET_TIMEWINDOW " + startMinute + " " + endMinute).equals("OK HW DEBUG"))
-            throw new IOException("CATEE returned an error or invalid response");
+        requireSuccess(request("SET_TIMEWINDOW " + startMinute + " " + endMinute));
+    }
+
+    public void grantAdminPrivilege(String role, int mask) throws IOException
+    {
+        requireSuccess(request(adminRequest("GRANT_ADMIN_PRIV", role, mask)));
+    }
+
+    public void revokeAdminPrivilege(String role, int mask) throws IOException
+    {
+        requireSuccess(request(adminRequest("REVOKE_ADMIN_PRIV", role, mask)));
+    }
+
+    public boolean checkAdminPrivilege(String role, int mask) throws IOException
+    {
+        return predicate(request(adminRequest("CHECK_ADMIN_PRIV", role, mask)));
+    }
+
+    public void beginRoleDeletion(String role) throws IOException
+    {
+        requireSuccess(request("BEGIN_ROLE_DELETE " + encodeRole(role)));
+    }
+
+    public void finishRoleDeletion(String role) throws IOException
+    {
+        requireSuccess(request("FINISH_ROLE_DELETE " + encodeRole(role)));
+    }
+
+    private static String adminRequest(String operation, String role, int mask)
+    {
+        if (mask == 0)
+            throw new IllegalArgumentException("A nonzero privilege mask is required");
+        return operation + " " + encodeRole(role) + " " + Integer.toUnsignedString(mask);
+    }
+
+    private static String encodeRole(String role)
+    {
+        if (role == null || role.isEmpty() || role.indexOf('\0') >= 0
+            || !StandardCharsets.UTF_8.newEncoder().canEncode(role))
+            throw new IllegalArgumentException("A valid role name is required");
+        byte[] bytes = role.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > 255)
+            throw new IllegalArgumentException("Role name exceeds 255 UTF-8 bytes");
+        StringBuilder hex = new StringBuilder();
+        for (byte value : bytes)
+        {
+            hex.append(Character.forDigit((value & 0xff) >>> 4, 16));
+            hex.append(Character.forDigit(value & 15, 16));
+        }
+        return hex.toString();
     }
 
     private static boolean predicate(String response) throws IOException
@@ -85,6 +133,12 @@ public final class CateeClient
         if (response.equals("ALLOW HW DEBUG")) return true;
         if (response.equals("DENY HW DEBUG")) return false;
         throw new IOException("CATEE returned an error or invalid response");
+    }
+
+    private static void requireSuccess(String response) throws IOException
+    {
+        if (!response.equals("OK HW DEBUG"))
+            throw new IOException("CATEE returned an error or invalid response");
     }
 
     private String request(String request) throws IOException

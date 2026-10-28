@@ -151,6 +151,8 @@ K_NORECURSIVE: N O R E C U R S I V E;
 K_MBEAN:       M B E A N;
 K_MBEANS:      M B E A N S;
 
+K_ABAC_ADMIN:                A B A C '_' A D M I N;
+K_SET_EA_ADMIN:              S E T '_' E A '_' A D M I N;
 K_CREATE_ATTRIBUTE:          C R E A T E '_' A T T R I B U T E;
 K_DROP_ATTRIBUTE:            D R O P '_' A T T R I B U T E;
 K_ALTER_ATTRIBUTE:           A L T E R '_' A T T R I B U T E;
