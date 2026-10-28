@@ -253,12 +253,14 @@ public class CateeAuthorizerTest extends CQLTester
                 catch (IOException e) { Thread.sleep(50); }
             }
             assertTrue("Hardware service did not become ready", ready);
+            client.setTimeWindow(540, 1020);
             CassandraRelevantProperties.CATEE_SOCKET.setString(socket.toString());
             CassandraAuthorizer authorizer = new AuthTestUtils.LocalCassandraAuthorizer();
             CassandraRelevantProperties.CATEE_SOCKET.clearValue();
             authorizer.setup();
             LocalTime now = LocalTime.now();
-            String actual = Boolean.toString(now.getHour() >= 9 && now.getHour() < 17);
+            int minute = now.getHour() * 60 + now.getMinute();
+            String actual = Boolean.toString(minute >= 540 && minute <= 1020);
             rule("hardware", "GRANT", Map.of("worktime", actual));
             assertEquals(Collections.singleton(Permission.SELECT), authorizer.authorize(USER, RESOURCE));
             rule("hardware", "GRANT", Map.of("worktime", Boolean.toString(!Boolean.parseBoolean(actual))));

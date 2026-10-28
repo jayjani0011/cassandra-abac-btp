@@ -9,7 +9,7 @@ struct WorktimeWindow {
     int end_minute;
 };
 
-static WorktimeWindow worktime_window{9 * 60, 17 * 60};
+static WorktimeWindow worktime_window{0, 24 * 60};
 
 // PATEE indexes Sunday=0 and initializes Monday through Friday as working days.
 static uint8_t workdays[7]{0, 1, 1, 1, 1, 1, 0};
@@ -39,7 +39,7 @@ int enclave_set_workday(const uint8_t *days)
 
 int enclave_set_timewindow(int start_minute, int end_minute)
 {
-    if (start_minute < 0 || start_minute >= end_minute || end_minute >= 1440)
+    if (start_minute < 0 || start_minute >= end_minute || end_minute > 1440)
         return 1;
     worktime_window = {start_minute, end_minute};
     return 0;
@@ -72,7 +72,7 @@ int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
     }
     if (check_worktime)
         *allowed = worktime_value == (current_minute >= worktime_window.start_minute
-                                     && current_minute < worktime_window.end_minute);
+                                     && current_minute <= worktime_window.end_minute);
     if (*allowed && check_subnet) *allowed = subnets.matches(subnet_name, client_ip);
     return 0;
 }

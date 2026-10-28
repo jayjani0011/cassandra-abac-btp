@@ -11,13 +11,22 @@ int main(int argc, char **argv)
     sgx_enclave_id_t enclave = 0;
     assert(sgx_create_enclave(argv[1], SGX_DEBUG_FLAG, nullptr, nullptr, &enclave, nullptr) == SGX_SUCCESS);
     int result = -1, allowed = -1, debug = -1;
-    for (int minute : {0, 539, 540, 840, 1019, 1020, 1439})
+    // PATEE's fresh default is full-day; both expected Boolean values are checked.
+    for (int minute = 0; minute < 1440; ++minute)
+        for (int expected : {0, 1})
+        {
+            assert(enclave_check_env(enclave, &result, 0, minute, 0, "", 0, expected,
+                                     0, 1, 0, &allowed, &debug) == SGX_SUCCESS && result == 0);
+            assert(allowed == expected);
+        }
+    assert(enclave_set_timewindow(enclave, &result, 540, 1020) == SGX_SUCCESS && result == 0);
+    for (int minute : {0, 539, 540, 840, 1019, 1020, 1021, 1439})
         for (int expected : {0, 1})
         {
             assert(enclave_check_env(enclave, &result, 0, minute, 0, "", 0, expected,
                                      0, 1, 0, &allowed, &debug) == SGX_SUCCESS);
             assert(result == 0 && debug == 1);
-            assert(allowed == (expected == (minute >= 540 && minute < 1020)));
+            assert(allowed == (expected == (minute >= 540 && minute <= 1020)));
         }
     assert(enclave_check_env(enclave, &result, 0, 0, 0, "", 0, 0,
                              0, 0, 0, &allowed, &debug) == SGX_SUCCESS);
