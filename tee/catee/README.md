@@ -6,7 +6,7 @@ This small prototype follows PATEE's process layout:
 Python test client -> local Unix socket -> native service -> ECALL -> SGX enclave
 ```
 
-The enclave window defaults to 09:00 inclusive to 17:00 exclusive and can be
+The enclave window defaults to the full day (minutes 0–1440, inclusive) and can be
 updated through the native service. Both the configuration and comparison live inside the enclave. The
 client supplies a time; this is not a trusted clock or a complete authorization
 decision. Cassandra can opt into this service for policies requiring `worktime`.
@@ -20,9 +20,9 @@ Like PATEE's `enclave_set_timewindow`, the enclave accepts start/end minutes.
 SET_TIMEWINDOW <startMinute> <endMinute>\n
 ```
 
-The window must satisfy `0 <= start < end < 1440`; invalid updates leave it
+The window must satisfy `0 <= start < end <= 1440`; invalid updates leave it
 unchanged. The response must be exactly `OK HW DEBUG`. Checks continue to use
-start-inclusive, end-exclusive boundaries. This transport trusts the permitted
+start-inclusive, end-inclusive boundaries. This transport trusts the permitted
 OS UID. Cassandra superusers or direct holders of `SET_EA_ADMIN` can configure
 the same window through CQL:
 
@@ -160,7 +160,7 @@ Run the native service under the same OS user, supplying its state file as shown
 above. Settings are captured when
 `CassandraAuthorizer` is constructed. The socket path must be absolute and the
 timeout must be 1–60000 milliseconds. These are connection settings, not policy
-configuration; the enclave window defaults to 09:00–17:00.
+configuration; the enclave window defaults to the full day.
 
 Use the exact environment condition `{'worktime': 'true'}` (or `'false'`) in an
 ABAC rule. This uses the existing CREATE RULE syntax and `system_auth.abac_rules`
@@ -283,12 +283,12 @@ slot; a full 32-entry table rejects it without changing state.
 
 Successful operations use the same seal/write/fsync/rename/directory-fsync path as
 admin updates. Persistence failure returns ERROR and stops the service. The new
-version-6 sealed state includes named subnets, working days, the working-hours window, grants
+version-7 sealed state includes named subnets, working days, the working-hours window, grants
 and deletion markers. Versions 1 and 2 restore their existing grants/markers and
-use the 09:00–17:00 default window. Version 3 preserves its window too. Versions
+use the full-day default window. Version 3 preserves its window too. Versions
 1–3 receive Monday–Friday working days; version 4 preserves its days too.
-Versions 1–4 start with no subnets; the next successful mutation writes version 6. Keep the same development signing key and compatible SGX sealing
-identity. Older binaries cannot read version 6; do not
+Versions 1–4 start with no subnets; the next successful mutation writes version 7. Keep the same development signing key and compatible SGX sealing
+identity. Older binaries cannot read version 7; do not
 downgrade them onto updated state.
 The `--init` option is never a migration or recovery mechanism.
 
@@ -556,7 +556,7 @@ Architecture reference: [PATEE's pinned implementation](https://github.com/harsh
 `CHECK_ENV` uses Sunday=0 through Saturday=6, minute 0–1439, an unsigned
 IPv4 integer, and 0/1 Boolean fields. `-` denotes no subnet. For example,
 `CHECK_ENV 0 840 0 - 0 0 0 1 0` asks whether 14:00 matches worktime=false.
-The existing exclusive end boundary and default 09:00–17:00 window are unchanged.
+The default window is full-day (0–1440) and both bounds are inclusive, matching PATEE.
 `CateeClient.checkWorktime` remains a convenience wrapper requesting expected=true;
 it uses this same common ECALL, not an observation-only enclave operation.
 
@@ -618,8 +618,24 @@ same state layout as version 5. On restoration of versions 1–5, bit 9 is clear
 because those files could contain arbitrary raw bits without this privilege's
 meaning. Other rights/configuration are retained; read-only restoration does not
 rewrite the file. An explicit new grant is required, and the next successful
-mutation saves version 6. Version-6 grants survive restart. Existing role-deletion
+mutation saves version 7. Version-6/7 grants survive restart. Existing role-deletion
 cleanup clears this bit along with all other privileges.
 
 This follows the paper's `SET_EA_ADMIN` model rather than copying the reference
 SetEnvAttribute handler's apparent CREATE_UA_ADMIN permission mismatch.
+
+## PATEE time conventions
+
+A fresh enclave uses start=0, end=1440. Observations remain valid only for minutes
+0–1439; 1440 is an end sentinel, not a valid current time. Both ends of a configured
+window are inclusive. For example, 10:00–11:00 includes the entire 11:00 minute.
+CQL hours remain 0–23 and minutes 0–59, as in PATEE's configuration handler:
+`SET ENV_ATTRIBUTE worktime = 0,0,23,59` covers every valid minute; 24:00 is invalid.
+Tests requiring a restricted window configure it explicitly instead of relying on
+the startup default. Stored-window migration is handled in catee/administration.
+
+Version 7 records PATEE's inclusive time semantics without changing the payload
+layout. Versions 3–6 retain their stored start/end numbers, now interpreted
+inclusively; versions 1–2 contain no window and receive the full-day default.
+Versions 6–7 preserve SET_EA_ADMIN; the earlier raw-bit migration still applies
+only to versions 1–5. No existing configured window is reset to a default.

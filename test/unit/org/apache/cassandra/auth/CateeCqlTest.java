@@ -78,7 +78,8 @@ public class CateeCqlTest extends CateeCqlTestSupport
         assertTrue(client.checkWorktime(600));
         assertTrue(client.checkWorktime(659));
         org.junit.Assert.assertFalse(client.checkWorktime(599));
-        org.junit.Assert.assertFalse(client.checkWorktime(660));
+        assertTrue(client.checkWorktime(660));
+        org.junit.Assert.assertFalse(client.checkWorktime(661));
         restartService();
         assertTrue(client.checkWorktime(630));
         org.junit.Assert.assertFalse(client.checkWorktime(840));
@@ -112,12 +113,8 @@ public class CateeCqlTest extends CateeCqlTestSupport
         useSuperUser();
         executeNet("SET ENV_ATTRIBUTE worktime = 0,0,23,59");
         useUser("catee_reader", "test-password");
-        // The existing exclusive-end convention excludes the final minute of the day.
-        LocalTime now = LocalTime.now();
-        if (now.getHour() * 60 + now.getMinute() < 1439)
-            assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
-        else
-            assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        // 00:00–23:59 now covers every valid minute, including 23:59.
+        assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
         useSuperUser();
         executeNet("SET ENV_ATTRIBUTE worktime = 9,0,17,0");
         Path stateFile = Path.of(socket.toString() + ".sealed");
@@ -134,7 +131,8 @@ public class CateeCqlTest extends CateeCqlTestSupport
         finally { Files.deleteIfExists(pendingFile); }
         restartService();
         assertTrue(client.checkWorktime(840));
-        org.junit.Assert.assertFalse(client.checkWorktime(1020));
+        assertTrue(client.checkWorktime(1020));
+        org.junit.Assert.assertFalse(client.checkWorktime(1021));
         QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
                                        Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
         useUser("catee_reader", "test-password");
@@ -267,6 +265,51 @@ public class CateeCqlTest extends CateeCqlTestSupport
         }
     }
 
+    private void checkInclusiveBoundaryThroughCql(boolean originalExpected) throws Throwable
+    {
+        useSuperUser();
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("worktime", "true"), "catee_worktime");
+        boolean stable = false;
+        for (int attempt = 0; attempt < 3; ++attempt)
+        {
+            LocalTime observed = LocalTime.now();
+            int minute = observed.getHour() * 60 + observed.getMinute();
+            int start = minute == 0 ? 0 : minute - 1, end = minute == 0 ? 1 : minute;
+            useSuperUser();
+            executeNet(String.format("SET ENV_ATTRIBUTE worktime = %d,%d,%d,%d", start/60, start%60, end/60, end%60));
+            useUser("catee_reader", "test-password");
+            com.datastax.driver.core.ResultSet result = null;
+            try { result = executeNet("SELECT id FROM %s"); }
+            catch (com.datastax.driver.core.exceptions.UnauthorizedException expected) { }
+            LocalTime after = LocalTime.now();
+            if (after.getHour() * 60 + after.getMinute() != minute) continue;
+            org.junit.Assert.assertNotNull("Current ending minute must be permitted", result);
+            assertRowsNet(result, row(1));
+            stable = true;
+            break;
+        }
+        assertTrue("Could not obtain a stable clock minute for boundary validation", stable);
+        useSuperUser();
+        int hour = LocalTime.now().getHour();
+        executeNet(hour < 12 ? "SET ENV_ATTRIBUTE worktime = 18,0,19,0" : "SET ENV_ATTRIBUTE worktime = 1,0,2,0");
+        useUser("catee_reader", "test-password");
+        assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE worktime = 0,0,23,59");
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        restartService();
+        useUser("catee_reader", "test-password");
+        assertRowsNet(executeNet("SELECT id FROM %s"), row(1));
+        useSuperUser();
+        executeNet("SET ENV_ATTRIBUTE worktime = 9,0,17,0");
+        QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
+                                       Map.of("worktime", Boolean.toString(originalExpected)), "catee_worktime");
+        useUser("catee_reader", "test-password");
+    }
+
     @Test
     public void cqlUsesEnclaveAndDoesNotReuseStalePermissions() throws Throwable
     {
@@ -344,7 +387,8 @@ public class CateeCqlTest extends CateeCqlTestSupport
         QueryProcessor.executeInternal("INSERT INTO system_auth.resource_attribute_values (resource_name, attribute_name, attribute_value) VALUES (?, ?, ?)",
                                        DataResource.table(KEYSPACE, currentTable()).getName(), "catee_table", "target");
         LocalTime now = LocalTime.now();
-        boolean within = now.getHour() >= 9 && now.getHour() < 17;
+        int minute = now.getHour() * 60 + now.getMinute();
+        boolean within = minute >= 540 && minute <= 1020;
         executeNet("CREATE RULE catee_worktime FOR SELECT OF USER ATTRIBUTE {'catee_subject': 'reader'} " +
                    "AND RESOURCE ATTRIBUTE {'catee_table': 'target'} AND ENVIRONMENT ATTRIBUTE {'worktime': '" + within + "'} WITH EFFECT (GRANT)");
         useUser("catee_reader", "test-password");
@@ -352,6 +396,7 @@ public class CateeCqlTest extends CateeCqlTestSupport
         checkWindowConfigurationThroughCql(within);
         checkWorkdayConfigurationThroughCql(within);
         checkSubnetAndLoadThroughCql(within);
+        checkInclusiveBoundaryThroughCql(within);
         QueryProcessor.executeInternal("UPDATE system_auth.abac_rules SET environment_attribute_conditions = ? WHERE rule_name = ?",
                                        Map.of("worktime", Boolean.toString(!within)), "catee_worktime");
         assertInvalidMessageNet("has no SELECT permission", "SELECT id FROM %s");

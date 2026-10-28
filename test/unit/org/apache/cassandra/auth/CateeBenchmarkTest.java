@@ -36,7 +36,8 @@ public class CateeBenchmarkTest extends CQLTester
     private static boolean withinWorktime()
     {
         LocalTime now = LocalTime.now();
-        return now.getHour() >= 9 && now.getHour() < 17;
+        int minute = now.getHour() * 60 + now.getMinute();
+        return minute >= 540 && minute <= 1020;
     }
 
     private static void loadPoint(String scenario)

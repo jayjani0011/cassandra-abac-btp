@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Reject incomplete or incorrect benchmark data before comparing performance."""
 import csv
+import datetime
+from unittest.mock import patch
 import pathlib
 import tempfile
 import unittest
 
-from benchmark_abac import validate_samples
+from benchmark_abac import validate_samples, within_worktime
 
 
 class BenchmarkSamplesTest(unittest.TestCase):
@@ -21,6 +23,13 @@ class BenchmarkSamplesTest(unittest.TestCase):
                 writer.writerow(["repeat", "mode", "scenario", "batch", "sample", "elapsed_ns", "select_granted"])
                 writer.writerows(rows)
             return validate_samples(path, "native", 1, 1, 1)
+
+    def test_benchmark_window_includes_the_whole_ending_minute(self):
+        for hour, minute, second, expected in [(8,59,59,False),(9,0,0,True),(16,59,59,True),
+                                                (17,0,0,True),(17,0,59,True),(17,1,0,False)]:
+            with self.subTest(hour=hour, minute=minute, second=second), patch("benchmark_abac.datetime") as clock:
+                clock.datetime.now.return_value = datetime.datetime(2026,10,28,hour,minute,second)
+                self.assertEqual(expected, within_worktime())
 
     def test_accepts_complete_consistent_results(self):
         self.assertEqual("true", self.validate(self.rows())["control"])

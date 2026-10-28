@@ -207,7 +207,7 @@ class SealingTest(unittest.TestCase):
                        check=True, capture_output=True, timeout=5)
 
     @staticmethod
-    def payload(version=6, entries=(), count=None, window=(540, 1020), days=(0,1,1,1,1,1,0), subnets=(), subnet_count=None):
+    def payload(version=7, entries=(), count=None, window=(540, 1020), days=(0,1,1,1,1,1,0), subnets=(), subnet_count=None):
         legacy = version == 1
         packed = bytearray(struct.pack("<I", version))
         for role, mask, pending in entries:
@@ -249,7 +249,7 @@ class SealingTest(unittest.TestCase):
         original = self.state.read_bytes()
         process = self.start()
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 840 0 - 0 1 0 1 0\n"]))
-        self.assertEqual(b"DENY HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 1 0 1 0\n"]))
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 3\n"]))
         self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
         self.assertEqual(original, self.state.read_bytes())
@@ -273,7 +273,7 @@ class SealingTest(unittest.TestCase):
         self.path.unlink()
         process = self.start()
         for minute in range(1440):
-            expected = b"ALLOW HW DEBUG\n" if 600 <= minute < 660 else b"DENY HW DEBUG\n"
+            expected = b"ALLOW HW DEBUG\n" if 600 <= minute <= 660 else b"DENY HW DEBUG\n"
             self.assertEqual(expected, exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]), minute)
         self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 626f62 2\n"]))
         self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 616c696365 1\n"]))
@@ -303,7 +303,7 @@ class SealingTest(unittest.TestCase):
         self.start(True)
         original = self.state.read_bytes()
         for request in [b"SET_TIMEWINDOW 660 600\n", b"SET_TIMEWINDOW -1 600\n",
-                        b"SET_TIMEWINDOW 600 1440\n", b"SET_TIMEWINDOW 600 600\n",
+                        b"SET_TIMEWINDOW 600 1441\n", b"SET_TIMEWINDOW 600 600\n",
                         b"SET_TIMEWINDOW invalid 600\n", b"SET_WORKDAY 0 1 1 1 1 1 2\n",
                         b"SET_WORKDAY 0 1 1\n"]:
             self.assertTrue(exchange(self.path, [request]).startswith(b"ERROR "))
@@ -404,8 +404,56 @@ class SealingTest(unittest.TestCase):
                 self.stop(process)
                 self.state.unlink()
 
+    def test_full_day_default_and_end_sentinel_survive_restart(self):
+        process = self.start(True)
+        for minute in range(1440):
+            self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]))
+        self.stop(process)
+        process = self.start()
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 1439 0 - 0 1 0 1 0\n"]))
+        self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [b"SET_TIMEWINDOW 1439 1440\n"]))
+        self.stop(process)
+        self.start()
+        for minute in [0, 1438, 1439]:
+            self.assertEqual(b"ALLOW HW DEBUG\n" if minute == 1439 else b"DENY HW DEBUG\n",
+                             exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 1 0 1 0\n".encode()]))
+        self.assertEqual(b"ERROR invalid_environment\n", exchange(self.path, [b"CHECK_ENV 0 1440 0 - 0 1 0 1 0\n"]))
+
+    def test_legacy_windows_keep_numbers_and_gain_inclusive_ending(self):
+        for version in range(3, 7):
+            for start, end in [(600,660), (0,1439), (540,1020)]:
+                with self.subTest(version=version, start=start, end=end):
+                    self.seal_payload(self.payload(version=version, entries=[(b"alice",513,0),(b"pending",0,1)],
+                                                   window=(start,end), days=(1,0,0,0,0,0,1),
+                                                   subnets=[(b"campus",167772160,8)]))
+                    original = self.state.read_bytes()
+                    process = self.start()
+                    for minute in {max(0,start-1),start,end,min(1439,end+1)}:
+                        for expected in [0,1]:
+                            matched = expected == (start <= minute <= end)
+                            self.assertEqual(b"ALLOW HW DEBUG\n" if matched else b"DENY HW DEBUG\n",
+                                             exchange(self.path, [f"CHECK_ENV 0 {minute} 0 - 0 {expected} 0 1 0\n".encode()]))
+                    self.assertEqual(original, self.state.read_bytes())
+                    self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 1\n"]))
+                    self.assertEqual(b"ALLOW HW DEBUG\n" if version == 6 else b"DENY HW DEBUG\n",
+                                     exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 512\n"]))
+                    self.assertEqual(b"ERROR admin_operation_failed\n", exchange(self.path, [b"GRANT_ADMIN_PRIV 70656e64696e67 1\n"]))
+                    self.assertEqual(b"OK HW DEBUG\n", exchange(self.path, [f"SET_TIMEWINDOW {start} {end}\n".encode()]))
+                    self.stop(process)
+                    process = self.start()
+                    self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [f"CHECK_ENV 0 {end} 0 - 0 1 0 1 0\n".encode()]))
+                    if version >= 4:
+                        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"CHECK_ENV 0 0 0 - 1 0 1 0 0\n"]))
+                    if version >= 5:
+                        self.assertEqual(b"ALLOW HW DEBUG\n", exchange(self.path, [b"SUBNET_EXISTS 63616d707573\n"]))
+                    self.assertEqual(b"ALLOW HW DEBUG\n" if version == 6 else b"DENY HW DEBUG\n",
+                                     exchange(self.path, [b"CHECK_ADMIN_PRIV 616c696365 512\n"]))
+                    self.stop(process)
+                    self.state.unlink()
+
     def test_authenticated_invalid_payloads_rejected_without_reset(self):
-        cases = [self.payload(version=7), self.payload(subnet_count=33),
+        cases = [self.payload(version=8), self.payload(subnet_count=33),
                  self.payload(subnets=[(b"",0,0)]), self.payload(subnets=[(b"x"*64,0,0)]),
                  self.payload(subnets=[(b"a",0,33)]), self.payload(subnets=[(b"a",1,0)]),
                  self.payload(subnets=[(b"a",0,0),(b"a",0,0)]), self.payload(days=(0,1,1,1,1,1,2)), self.payload(count=33),
@@ -425,7 +473,7 @@ class SealingTest(unittest.TestCase):
                  struct.pack("<I", 1) + self.payload()[4:],
                  struct.pack("<I", 2) + self.payload(version=1)[4:]]
         cases += [self.payload(window=window) for window in
-                  [(-1, 660), (600, 600), (660, 600), (600, 1440), (0, -1), (0, 2147483647)]]
+                  [(-1, 660), (600, 600), (660, 600), (600, 1441), (0, -1), (0, 2147483647)]]
         for payload in cases:
             with self.subTest(size=len(payload), prefix=payload[:4]):
                 self.seal_payload(payload)

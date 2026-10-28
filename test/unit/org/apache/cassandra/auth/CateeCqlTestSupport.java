@@ -32,6 +32,11 @@ public abstract class CateeCqlTestSupport extends CQLTester
         socket = Path.of(configuredSocket);
         log = socket.resolveSibling("service.log");
         startService(true);
+        CateeClient initial = new CateeClient(socket, 2000);
+        assertTrue(initial.checkWorktime(0));
+        assertTrue(initial.checkWorktime(1439));
+        // Restricted-window scenarios configure their fixture explicitly.
+        initial.setTimeWindow(540, 1020);
         CassandraRelevantProperties.ORG_APACHE_CASSANDRA_DISABLE_MBEAN_REGISTRATION.setBoolean(true);
         requireAuthentication();
         requireNetwork();

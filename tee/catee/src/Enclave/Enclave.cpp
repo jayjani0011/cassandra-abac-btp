@@ -14,7 +14,7 @@ struct WorktimeWindow {
     int end_minute;
 };
 
-static WorktimeWindow worktime_window{9 * 60, 17 * 60};
+static WorktimeWindow worktime_window{0, 24 * 60};
 
 // PATEE indexes Sunday=0 and initializes Monday through Friday as working days.
 static uint8_t workdays[7]{0, 1, 1, 1, 1, 1, 0};
@@ -61,7 +61,7 @@ static_assert(sizeof(LegacySealedAdminState) == 8328, "Unexpected version-1 layo
 static_assert(sizeof(LegacySealedAdminStateV2) == 8456, "Unexpected version-2 layout");
 static_assert(sizeof(LegacySealedAdminStateV3) == 8464, "Unexpected version-3 layout");
 static_assert(sizeof(LegacySealedAdminStateV4) == 8472, "Unexpected version-4 layout");
-static_assert(sizeof(SealedAdminState) == 10780, "Unexpected version-5/6 layout");
+static_assert(sizeof(SealedAdminState) == 10780, "Unexpected version-5/6/7 layout");
 
 int enclave_get_sealed_size(uint32_t *sealed_size)
 {
@@ -76,7 +76,7 @@ int enclave_seal_admin(uint8_t *sealed_data, uint32_t sealed_size)
     uint32_t required = 0;
     if (enclave_get_sealed_size(&required) != 0 || sealed_data == nullptr || sealed_size != required)
         return 1;
-    SealedAdminState state{6, admin_privileges, worktime_window, {}, subnets};
+    SealedAdminState state{7, admin_privileges, worktime_window, {}, subnets};
     memcpy(state.days, workdays, sizeof(workdays));
     return sgx_seal_data(0, nullptr, sizeof(state), reinterpret_cast<const uint8_t *>(&state),
                          sealed_size, reinterpret_cast<sgx_sealed_data_t *>(sealed_data)) == SGX_SUCCESS ? 0 : 1;
@@ -98,7 +98,7 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     if (sgx_unseal_data(sealed, nullptr, &additional_size, payload, &size) != SGX_SUCCESS
         || size != payload_size)
         return 1;
-    SealedAdminState state{6, {}, {9 * 60, 17 * 60}, {0, 1, 1, 1, 1, 1, 0}, {}};
+    SealedAdminState state{7, {}, {0, 24 * 60}, {0, 1, 1, 1, 1, 1, 0}, {}};
     if (size == sizeof(LegacySealedAdminState))
     {
         LegacySealedAdminState legacy{};
@@ -138,14 +138,14 @@ int enclave_unseal_admin(const uint8_t *sealed_data, uint32_t sealed_size)
     else
     {
         memcpy(&state, payload, sizeof(state));
-        if (state.version != 5 && state.version != 6) return 1;
+        if (state.version != 5 && state.version != 6 && state.version != 7) return 1;
     }
     if (!state.subnets.valid()) return 1;
     for (uint8_t day : state.days)
         if (day > 1) return 1;
     if (state.privileges.count > AdminPrivileges::max_admins
         || state.window.start_minute < 0 || state.window.start_minute >= state.window.end_minute
-        || state.window.end_minute >= 1440)
+        || state.window.end_minute > 1440)
         return 1;
     for (unsigned i = 0; i < state.privileges.count; ++i)
     {
@@ -225,7 +225,7 @@ int enclave_set_workday(const uint8_t *days)
 
 int enclave_set_timewindow(int start_minute, int end_minute)
 {
-    if (start_minute < 0 || start_minute >= end_minute || end_minute >= 1440)
+    if (start_minute < 0 || start_minute >= end_minute || end_minute > 1440)
         return 1;
     worktime_window = {start_minute, end_minute};
     return 0;
@@ -258,7 +258,7 @@ int enclave_check_env(int day_of_week, int current_minute, uint32_t client_ip,
     }
     if (check_worktime)
         *allowed = worktime_value == (current_minute >= worktime_window.start_minute
-                                     && current_minute < worktime_window.end_minute);
+                                     && current_minute <= worktime_window.end_minute);
     if (*allowed && check_subnet) *allowed = subnets.matches(subnet_name, client_ip);
     return 0;
 }

@@ -23,7 +23,8 @@ SEED = 20261022
 
 
 def within_worktime():
-    return 9 <= datetime.datetime.now().hour < 17
+    now = datetime.datetime.now()
+    return 540 <= now.hour * 60 + now.minute <= 1020
 
 
 def validate_samples(path, mode, repeat, batches, calls):
@@ -69,7 +70,7 @@ def main():
                     timed_interval="one getAbacPermissions call; setup, assertions, CSV writes and warmup excluded",
                     logging="root and CassandraAuthorizer WARN",
                     cache="direct method; final permissions cache and RBAC excluded", seed=SEED,
-                    time_window="09:00 inclusive to 17:00 exclusive; host local time", sgx="HW DEBUG",
+                    time_window="09:00 through 17:00 inclusive (minute granularity); host local time", sgx="HW DEBUG",
                     host=platform.node(), kernel=platform.release(), architecture=platform.machine(),
                     started_utc=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     timezone=time.tzname, sgx_sdk=os.environ.get("SGX_SDK", str(pathlib.Path.home() / "sgxsdk")))
@@ -95,6 +96,8 @@ def main():
         metadata["service_sha256"] = hashlib.sha256(SERVICE.read_bytes()).hexdigest()
         initial_worktime = within_worktime()
         metadata["within_worktime"] = initial_worktime
+        metadata["worktime_window"] = dict(start_minute=540, end_minute=1020, end_inclusive=True,
+                                            configured_outside_timing=True)
         metadata["execution_order"] = []
         randomizer = random.Random(SEED)
         reference = None
@@ -114,6 +117,8 @@ def main():
                         time.sleep(0.05)
                 else:
                     raise RuntimeError("Hardware service did not become ready")
+                if exchange(socket, [b"SET_TIMEWINDOW 540 1020\n"]) != b"OK HW DEBUG\n":
+                    raise RuntimeError("Cannot configure benchmark window outside timed measurements")
                 for repeat in range(1, repeats + 1):
                     modes = ["native", "sgx"]
                     randomizer.shuffle(modes)

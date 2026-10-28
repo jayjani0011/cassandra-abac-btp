@@ -21,7 +21,7 @@ the test data directory. Do not run another Ant test job at the same time.
 | Administration and role lifecycle | Supported commands, direct grants, validation, ordering, failures at each cleanup stage, retries, recreation and concurrent mutations |
 | Sequential hardware CQL | Real Cassandra requests through IPC/ECALLs, configuration affecting data access, restart persistence, failed saves, existing sessions and service failure |
 | Concurrent hardware CQL | Eight independent authenticated sessions; 2,400 reads over allow/revoke/regrant phases; 320 concurrent administrative updates; abrupt service death and recovery |
-| Sealed state | Versions 1/2/3/4/5/6, grant/marker/window/workday restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
+| Sealed state | Versions 1/2/3/4/5/6/7, grant/marker/window/workday restoration, invalid authenticated payloads, corruption, capacity, concurrent requests and process crashes |
 | Persistence fault injection | All seven mutable operations at nine named host I/O/error/exit boundaries (63 subcases) |
 | Evaluation tooling | Bad/missing samples, statistical fixtures, smoke labeling, CSV/image export, overwrite refusal and historical-output protection |
 | Benchmark smoke | One native/SGX pair with tiny batches, followed by analysis; all generated output is validation-only and isolated |
@@ -82,3 +82,11 @@ existing session, restart, failed grant persistence, role deletion/recreation an
 unavailable service. Old versions 1–5 never acquire authority from raw bit 9;
 version 6 preserves explicit new grants. The delegation CQL suite is required and
 must execute without skips in the validation runner.
+
+Time semantics match PATEE: full-day fresh default and inclusive ending minutes.
+Hardware tests check every valid minute, CQL checks the current ending minute
+(with a bounded retry if the clock crosses a minute), and full-day CQL access
+survives restart. Versions 3–6 keep their window numbers; versions 1–2 receive
+the full-day default. Version-6 SET_EA_ADMIN remains intact. Benchmarks explicitly
+configure 09:00–17:00 inclusive outside timing, record that window in metadata,
+and use matching Java/Python/native comparisons. Historical results are unchanged.
