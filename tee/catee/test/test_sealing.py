@@ -30,8 +30,8 @@ class SealingTest(unittest.TestCase):
     def command(self, initialize=False, path=None):
         return [str(SERVICE), str(path or self.path), str(ENCLAVE), str(self.state)] + (["--init"] if initialize else [])
 
-    def start(self, initialize=False):
-        process = subprocess.Popen(self.command(initialize), stdout=self.log, stderr=self.log)
+    def start(self, initialize=False, environment=None):
+        process = subprocess.Popen(self.command(initialize), stdout=self.log, stderr=self.log, env=environment)
         self.addCleanup(self.stop, process)
         for _ in range(100):
             if process.poll() is not None:

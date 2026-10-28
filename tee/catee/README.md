@@ -190,6 +190,36 @@ Final permission caching is bypassed when CATEE is enabled so a cached grant or 
 RBAC-only warmup entry cannot skip a newly required SGX check. This also makes
 non-worktime authorizations uncached in that mode. Role metadata caches remain.
 
+### Run all correctness checks
+
+From the repository root, with Java 11, the SGX SDK environment and the analysis
+requirements installed in `tee/catee/.local/analysis-venv` (see analysis setup below):
+
+```bash
+python3 tee/catee/test/validate_correctness.py
+```
+
+This command builds Cassandra's tests and the native prototype, runs the store,
+real-hardware ECALL, service, sealing, and Java-client suites, then runs the
+administration, environment configuration, role lifecycle, authorizer, sequential
+and concurrent network CQL, loader, environment-provider, role and audit tests.
+It also runs ASan/UBSan store checks, benchmark/analysis tests (including figure
+exports), and a tiny benchmark/analysis smoke run. All smoke output stays inside
+the new ignored validation directory; it is not performance evidence.
+See [test coverage and limits](test/README.md).
+Hardware tests are explicitly enabled. Fresh JUnit reports must contain executed
+tests, no failures/errors/skips, and the required hardware test methods; old
+reports cannot satisfy a new run. Any failed step exits nonzero.
+
+Each run keeps logs and JUnit reports in a new ignored
+`tee/catee/build/validation/run-*/` directory and prints their location. Test
+fixtures use temporary sockets and sealed state; no live Cassandra configuration
+or historical benchmark data is changed. Cassandra tests run sequentially because
+they share `build/test/cassandra`; do not run another Ant test job concurrently.
+The local enclave signing key is preserved. This validates the hardware debug
+prototype, not attestation or production enclave security. No performance sweeps
+are run by this command; only the explicitly labeled smoke fixture is generated.
+
 Focused checks from the repository root, after building the native service:
 
 ```bash
@@ -300,6 +330,81 @@ Tests use a separate fixture enclave under `test/sealing_fixture`, signed with t
 local development key, to generate real version-1 state and authenticated invalid
 payloads. Its ECALL is not included in the service enclave. `make test` builds it;
 `test_sealing.py` also ensures this fixture is built when invoked directly.
+
+## ABAC versus CATEE benchmark
+
+```bash
+# Validation only: 1 warmup batch, 2 retained batches, 3 calls per batch.
+python3 tee/catee/test/benchmark_abac.py tee/catee/build/benchmark-smoke-NEW --smoke
+# Measurement protocol: 3 independent pairs of fresh JVMs by default.
+python3 tee/catee/test/benchmark_abac.py benchmarks/catee/comparison-NEW
+```
+
+Choose a new output path without whitespace. Existing directories and paths
+under historical `benchmarks/abac-experiments` are refused. The command builds
+the test harness and native service, then uses isolated Cassandra test databases
+and temporary SGX service state. Do not run other Ant tests concurrently.
+
+Each JVM evaluates three fixed one-rule workloads: a control without an
+environment condition, `worktime=true`, and `worktime=false`. User/resource
+conditions match the same anchor request. Native ABAC uses a Java provider with
+the same local-clock 09:00–17:00 predicate; CATEE uses the real enclave. Every
+returned permission set is checked outside the timed interval, and modes must
+produce identical decisions. Runs crossing the working-hours boundary fail.
+
+Full mode uses the historical experiment protocol: load configuration once per
+point, discard 10 warmup batches, retain 100 batches of 100 calls (10,000 samples
+per scenario/mode/repetition). Scenario order is seeded and shared across each
+mode pair; mode order is seeded separately. Each mode/repetition has a fresh JVM.
+`--repeats N` changes the repetition count, not the per-point batch protocol.
+
+Only `getAbacPermissions()` is timed, including its internal authorization-table
+reads. Final permission caching, RBAC union, end-user CQL execution, assertions,
+CSV output, loading, enclave startup, and sealing are outside the measurement.
+Logging is reduced equally for both modes. This measures
+direct authorization overhead, not deployed CQL throughput or cache behavior.
+Historical measurements are a protocol reference, not directly interchangeable
+data for this fixed workload.
+
+Each mode/repetition writes raw per-call nanoseconds and decisions to CSV. JSON
+metadata records protocol, execution order, revision, dirty paths, host/software
+details, and service/enclave hashes. Only `status=complete` is valid; a failed run
+retains partial output marked incomplete. `kind=smoke` data is validation only.
+Logs and fresh JUnit reports are also retained.
+
+### Summaries and graphs
+
+The analysis uses Matplotlib in an isolated environment. The pinned dependency
+below was validated with the lab's Python 3.14 interpreter:
+
+```bash
+python3 -m venv tee/catee/.local/analysis-venv
+tee/catee/.local/analysis-venv/bin/python -m pip install -r tee/catee/test/requirements-analysis.txt
+python3 tee/catee/test/test_analyze_benchmark.py
+tee/catee/.local/analysis-venv/bin/python tee/catee/test/analyze_benchmark.py benchmarks/catee/comparison-NEW benchmarks/catee/analysis-NEW
+```
+
+The output directory must be new and outside historical ABAC results. Inputs
+must be complete, follow the recorded batch protocol, contain every sample
+exactly once, and have identical decisions across modes/repetitions. Smoke input
+is refused unless `--allow-smoke` is supplied; its CSVs and graphs are labeled as
+validation data. A successful analysis writes `analysis.json` with
+`status=complete`; partial output from a failed analysis must not be used.
+
+Outputs are `batch_summary.csv`, `repeat_summary.csv`, `point_summary.csv`, and
+`comparison.csv`, plus latency/overhead graphs in SVG and PNG. Tables use
+nanoseconds; latency figures use microseconds. Batch and repetition tables include
+mean, median, and nearest-rank p95. Point means average independent repetition
+means. Error bars are sample standard deviations across repetitions, not
+confidence intervals or variation estimated by treating all calls as independent.
+With one repetition, SD is left blank and error bars are omitted.
+
+Overhead is paired by repetition: compute SGX/native mean-latency ratios, then
+average those ratios. Reported overhead is `(ratio - 1) * 100`; its SD is computed
+across the paired percentages. This differs from dividing the two overall means.
+The comparison also reports the mean paired latency difference. Interpretation
+and recorded full-protocol results are available in
+[the 22 October 2026 comparison](../../benchmarks/catee/comparison-2026-10-22/README.md).
 
 ## Administrative privilege store and ECALLs
 
