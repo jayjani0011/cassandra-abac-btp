@@ -184,6 +184,48 @@ public class CateeAdministrationTest extends CQLTester
         finally { DatabaseDescriptor.setRoleManager(previousRoles); }
     }
 
+    @Test
+    public void environmentalPrivilegeUsesProtectedProvisioningOnly()
+    {
+        for (String query : new String[] {
+            "GRANT ABAC_ADMIN { SET_EA_ADMIN } TO alice",
+            "REVOKE ABAC_ADMIN { SET_EA_ADMIN } FROM alice",
+            "GRANT ABAC_ADMIN { SET_EA_ADMIN, CREATE_POLICY } TO alice"})
+            assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement(query)
+                       instanceof org.apache.cassandra.cql3.statements.AbacAdminPrivilegeStatement);
+        assertTrue(org.apache.cassandra.cql3.QueryProcessor.parseStatement("GRANT set_ea_admin TO alice")
+                   instanceof org.apache.cassandra.cql3.statements.GrantRoleStatement);
+        try
+        {
+            org.apache.cassandra.cql3.QueryProcessor.parseStatement("GRANT SET_EA_ADMIN ON ALL ROLES TO alice");
+            fail("Must not become an ordinary RBAC permission");
+        }
+        catch (org.apache.cassandra.exceptions.SyntaxException expected) { }
+        assertFalse(RoleResource.root().applicablePermissions().contains(Permission.SET_EA_ADMIN));
+        IRoleManager previousRoles = DatabaseDescriptor.getRoleManager();
+        IRoleManager roles = mock(IRoleManager.class);
+        DatabaseDescriptor.setRoleManager(roles);
+        try
+        {
+            when(state.isSuper()).thenReturn(true);
+            RoleResource target = RoleResource.role("alice");
+            when(roles.isExistingRole(target)).thenReturn(true);
+            when(roles.canLogin(target)).thenReturn(true);
+            authorizer.allowed = true;
+            Set<Permission> permissions = Set.of(Permission.SET_EA_ADMIN, Permission.CREATE_POLICY);
+            CateeAdministration.modifyPrivileges(state, target, permissions, true);
+            assertTrue(authorizer.granted);
+            assertEquals(512 | 128, authorizer.observedMask);
+            CateeAdministration.modifyPrivileges(state, target, Set.of(Permission.SET_EA_ADMIN), false);
+            assertFalse(authorizer.granted);
+            assertEquals(512, authorizer.observedMask);
+            when(state.isSuper()).thenReturn(false);
+            try { CateeAdministration.modifyPrivileges(state, target, permissions, true); fail(); }
+            catch (UnauthorizedException expected) { }
+        }
+        finally { DatabaseDescriptor.setRoleManager(previousRoles); }
+    }
+
     private void expectInvalidProvisioning(RoleResource role, Set<Permission> operations, boolean grant, String message)
     {
         try { CateeAdministration.modifyPrivileges(state, role, operations, grant); fail("Expected rejection"); }
