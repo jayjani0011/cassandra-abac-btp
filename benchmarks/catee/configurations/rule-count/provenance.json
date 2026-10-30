@@ -1,0 +1,404 @@
+{
+  "source_branch": "origin/abac-experiments-rule-count",
+  "source_commit": "5526358ba59b5321b62d7bc10f24a4d9f110b226",
+  "changes": "Use only PATEE-supported environmental names: worktime, workday, subnet, and server_load. Former synthetic environment conditions were mapped to those names with match-preserving values; the fifth attribute was removed where present.",
+  "points": [
+    {
+      "profile": "C1",
+      "rule_count": 1,
+      "point_id": "C1-rules-001",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "19aa355def763c370671dc1e6fa0677a04220d2f662bfb69749f220a314d9fa0"
+      }
+    },
+    {
+      "profile": "C1",
+      "rule_count": 10,
+      "point_id": "C1-rules-010",
+      "applicable_rules": 5,
+      "expected_worktime_calls_per_authorization": 5,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "10b7ac12ef1627a6834f11c72df11b1a9aa3096be948291343f4bb5179402857"
+      }
+    },
+    {
+      "profile": "C1",
+      "rule_count": 50,
+      "point_id": "C1-rules-050",
+      "applicable_rules": 29,
+      "expected_worktime_calls_per_authorization": 29,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "1888e220d7961894ce378f00d3bf3c860de5e130ba4b9045e68a53c6d2cd654f"
+      }
+    },
+    {
+      "profile": "C1",
+      "rule_count": 100,
+      "point_id": "C1-rules-100",
+      "applicable_rules": 59,
+      "expected_worktime_calls_per_authorization": 59,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "0c3996c193ddfa1e5f0636dc1c1b954d96e5993f8719dd020687763ec4473829"
+      }
+    },
+    {
+      "profile": "C1",
+      "rule_count": 250,
+      "point_id": "C1-rules-250",
+      "applicable_rules": 128,
+      "expected_worktime_calls_per_authorization": 128,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "f1ca0b66ab3df030a9481c82762dd5d620f3955be107af75b19a1573b30d937f"
+      }
+    },
+    {
+      "profile": "C1",
+      "rule_count": 500,
+      "point_id": "C1-rules-500",
+      "applicable_rules": 249,
+      "expected_worktime_calls_per_authorization": 249,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "0274f0761f8274cbde6dba1a6a148ca43f0fc03b9649ec5671f6d80ffa1ff13a"
+      }
+    },
+    {
+      "profile": "C2",
+      "rule_count": 1,
+      "point_id": "C2-rules-001",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "8c4bf720ebb05fcacf050adbfa5dc4d9f48a23e53ee5fd057821f25dfffbc811"
+      }
+    },
+    {
+      "profile": "C2",
+      "rule_count": 10,
+      "point_id": "C2-rules-010",
+      "applicable_rules": 2,
+      "expected_worktime_calls_per_authorization": 2,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "2f3093f58b3e1e9b48967d0c5f3531078e347baa09054c45599cbad0a9c79605"
+      }
+    },
+    {
+      "profile": "C2",
+      "rule_count": 50,
+      "point_id": "C2-rules-050",
+      "applicable_rules": 4,
+      "expected_worktime_calls_per_authorization": 4,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "7664d3d74c4f465c1d6c587125404d1c1ceda3e7ed9d7b87bf1b9d119b6f6957"
+      }
+    },
+    {
+      "profile": "C2",
+      "rule_count": 100,
+      "point_id": "C2-rules-100",
+      "applicable_rules": 10,
+      "expected_worktime_calls_per_authorization": 10,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "2390147c08124cbc2fbde677a3025fb0445af3c3bc841f7a315b9c7c07749565"
+      }
+    },
+    {
+      "profile": "C2",
+      "rule_count": 250,
+      "point_id": "C2-rules-250",
+      "applicable_rules": 20,
+      "expected_worktime_calls_per_authorization": 20,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "1c13ea33b208a47fc593eba1462059e0d3f23d6a875c53aaa7b73c00375d5b3b"
+      }
+    },
+    {
+      "profile": "C2",
+      "rule_count": 500,
+      "point_id": "C2-rules-500",
+      "applicable_rules": 34,
+      "expected_worktime_calls_per_authorization": 34,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "ad0ed57117494710800898c7a1a7bd41c54ede02198b4606baa448f7939f2680"
+      }
+    },
+    {
+      "profile": "C3",
+      "rule_count": 1,
+      "point_id": "C3-rules-001",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "f63b12ba6d8af472d18e89be9c5ac85a9654525eaef769f48fbd85c22fd3398c"
+      }
+    },
+    {
+      "profile": "C3",
+      "rule_count": 10,
+      "point_id": "C3-rules-010",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "bcd2252febe8a4d3f56b1f7164f229e8f27db3e4fe9a108f9bba27f76f8ae25c"
+      }
+    },
+    {
+      "profile": "C3",
+      "rule_count": 50,
+      "point_id": "C3-rules-050",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "2b488c60def4433086278994dfb80d1a05a52dbbe3ceb5e683020d85644fdfda"
+      }
+    },
+    {
+      "profile": "C3",
+      "rule_count": 100,
+      "point_id": "C3-rules-100",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "e21f1ee1b205668a80c16d809833ec68481b022dcab25ea67647ac94c9b8656c"
+      }
+    },
+    {
+      "profile": "C3",
+      "rule_count": 250,
+      "point_id": "C3-rules-250",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "f4da4efa24bc1daf279a2c3fc0a75db044fb94ffce196dd55c041b2ca68dd3e5"
+      }
+    },
+    {
+      "profile": "C3",
+      "rule_count": 500,
+      "point_id": "C3-rules-500",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "e3ac3b780cb58cf88252cbcc1836bf89ab9d0b1f1fcb954f6e31c0bec8ad4330"
+      }
+    },
+    {
+      "profile": "C4",
+      "rule_count": 1,
+      "point_id": "C4-rules-001",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "9245e3632878c5884f6162dfcd43bb2e85c6dd52129f15b146965cfead6aeb29"
+      }
+    },
+    {
+      "profile": "C4",
+      "rule_count": 10,
+      "point_id": "C4-rules-010",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "978d440fd0b9f24881fc53832730b49248400046d1de90234aad8291bae485a4"
+      }
+    },
+    {
+      "profile": "C4",
+      "rule_count": 50,
+      "point_id": "C4-rules-050",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "d0e93fc0761afabc261c40a2064c2f04438152fdfffa240561ddf6ad2aa2c000"
+      }
+    },
+    {
+      "profile": "C4",
+      "rule_count": 100,
+      "point_id": "C4-rules-100",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "5729bf8bb963c782fc71a1eb7d5097b820eeaeba20e9cdbdfe9bd8c301923e90"
+      }
+    },
+    {
+      "profile": "C4",
+      "rule_count": 250,
+      "point_id": "C4-rules-250",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "af93a06221c69a989e9266298c8b3eba869f92fc215ee4912150f3d797e019ed"
+      }
+    },
+    {
+      "profile": "C4",
+      "rule_count": 500,
+      "point_id": "C4-rules-500",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "02faac1ffe18aa5b772dc9469544081651588b848222eb84f1f6d345b66fa713"
+      }
+    },
+    {
+      "profile": "C5",
+      "rule_count": 1,
+      "point_id": "C5-rules-001",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "217a7ca78ad5c026b2c7986be77ee9ceb6581d53c201aecca153f1903abcce19"
+      }
+    },
+    {
+      "profile": "C5",
+      "rule_count": 10,
+      "point_id": "C5-rules-010",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "261a7bc82e75833e47b2ccdd29ed9b606f4bb31b19aad9770ffa44b54156d32f"
+      }
+    },
+    {
+      "profile": "C5",
+      "rule_count": 50,
+      "point_id": "C5-rules-050",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "29168eeb37d8b3678444e0ad9d8100aeab975f46e357b45a4400c094c819b85d"
+      }
+    },
+    {
+      "profile": "C5",
+      "rule_count": 100,
+      "point_id": "C5-rules-100",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "31b33ed22ba284467f4b477b8ae460b091729c377b9aea8db089083f109919f0"
+      }
+    },
+    {
+      "profile": "C5",
+      "rule_count": 250,
+      "point_id": "C5-rules-250",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "c331cf989b5fc1f72f1fca481adb58228e685c6039f66173f883d903cb1054fa"
+      }
+    },
+    {
+      "profile": "C5",
+      "rule_count": 500,
+      "point_id": "C5-rules-500",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "a1e4c2437386abb0609bd2ba4aa94bc0448d6d42937360096a7aad061b2ec5fd"
+      }
+    },
+    {
+      "profile": "C6",
+      "rule_count": 1,
+      "point_id": "C6-rules-001",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "fa0c9d07ff01c1c0ed71efd6f453f8fe18455216d6643d725c9b82b27055d732"
+      }
+    },
+    {
+      "profile": "C6",
+      "rule_count": 10,
+      "point_id": "C6-rules-010",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "29ac2b9bd62d71f542b946a8ddd868c82be22391c27bd8f80c2ca3deeb8ea4a7"
+      }
+    },
+    {
+      "profile": "C6",
+      "rule_count": 50,
+      "point_id": "C6-rules-050",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "de31278527ae499745b304e0fb1f27e230c0370a448aec3e80857dd4c8d2ab2a"
+      }
+    },
+    {
+      "profile": "C6",
+      "rule_count": 100,
+      "point_id": "C6-rules-100",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "935ec285f6a464f869bb17295382ae1b83755aaa91242d2c80a4b6a93cf3e346"
+      }
+    },
+    {
+      "profile": "C6",
+      "rule_count": 250,
+      "point_id": "C6-rules-250",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "f1551efa0090b1902671b5050c748f8d7a4bfbadfbd3b907759e261d38985230"
+      }
+    },
+    {
+      "profile": "C6",
+      "rule_count": 500,
+      "point_id": "C6-rules-500",
+      "applicable_rules": 1,
+      "expected_worktime_calls_per_authorization": 1,
+      "expected_select": true,
+      "adapted_sha256": {
+        "configuration_json": "f4e29634cc5566786353b0244051c4b34c3a87b5f4d54455a02e121f5c9ea9e3"
+      }
+    }
+  ],
+  "environment_setup": "../environment_setup.json"
+}

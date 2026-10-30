@@ -1,0 +1,163 @@
+{
+  "environment_setup": "environment_setup.json",
+  "profiles": [
+    {
+      "profile": "C1",
+      "directory": "config-001",
+      "users": 10,
+      "resources": 100,
+      "rules": 1,
+      "environment_conditions_per_rule": 2,
+      "protected_conditions_per_rule": 2,
+      "request_user": "benchmark_user_0001",
+      "request_resource": "data/abac_benchmark/resource_0001",
+      "permission": "SELECT",
+      "expected_select": true,
+      "supported_environment_attributes": [
+        "workday",
+        "worktime"
+      ],
+      "matching_rules_for_anchor": 1,
+      "database_evaluated_conditions_per_rule": 0,
+      "protected_condition_names": [
+        "workday",
+        "worktime"
+      ],
+      "database_evaluated_condition_names": []
+    },
+    {
+      "profile": "C2",
+      "directory": "config-002",
+      "users": 25,
+      "resources": 250,
+      "rules": 10,
+      "environment_conditions_per_rule": 2,
+      "protected_conditions_per_rule": 2,
+      "request_user": "benchmark_user_0001",
+      "request_resource": "data/abac_benchmark/resource_0001",
+      "permission": "SELECT",
+      "expected_select": true,
+      "supported_environment_attributes": [
+        "workday",
+        "worktime"
+      ],
+      "matching_rules_for_anchor": 2,
+      "database_evaluated_conditions_per_rule": 0,
+      "protected_condition_names": [
+        "workday",
+        "worktime"
+      ],
+      "database_evaluated_condition_names": []
+    },
+    {
+      "profile": "C3",
+      "directory": "config-003",
+      "users": 50,
+      "resources": 500,
+      "rules": 50,
+      "environment_conditions_per_rule": 3,
+      "protected_conditions_per_rule": 3,
+      "request_user": "benchmark_user_0001",
+      "request_resource": "data/abac_benchmark/resource_0001",
+      "permission": "SELECT",
+      "expected_select": true,
+      "supported_environment_attributes": [
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "matching_rules_for_anchor": 1,
+      "database_evaluated_conditions_per_rule": 0,
+      "protected_condition_names": [
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "database_evaluated_condition_names": []
+    },
+    {
+      "profile": "C4",
+      "directory": "config-004",
+      "users": 100,
+      "resources": 1000,
+      "rules": 100,
+      "environment_conditions_per_rule": 3,
+      "protected_conditions_per_rule": 3,
+      "request_user": "benchmark_user_0001",
+      "request_resource": "data/abac_benchmark/resource_0001",
+      "permission": "SELECT",
+      "expected_select": true,
+      "supported_environment_attributes": [
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "matching_rules_for_anchor": 1,
+      "database_evaluated_conditions_per_rule": 0,
+      "protected_condition_names": [
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "database_evaluated_condition_names": []
+    },
+    {
+      "profile": "C5",
+      "directory": "config-005",
+      "users": 250,
+      "resources": 2500,
+      "rules": 250,
+      "environment_conditions_per_rule": 4,
+      "protected_conditions_per_rule": 3,
+      "request_user": "benchmark_user_0001",
+      "request_resource": "data/abac_benchmark/resource_0001",
+      "permission": "SELECT",
+      "expected_select": true,
+      "supported_environment_attributes": [
+        "server_load",
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "matching_rules_for_anchor": 1,
+      "database_evaluated_conditions_per_rule": 1,
+      "protected_condition_names": [
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "database_evaluated_condition_names": [
+        "server_load"
+      ]
+    },
+    {
+      "profile": "C6",
+      "directory": "config-006",
+      "users": 500,
+      "resources": 5000,
+      "rules": 500,
+      "environment_conditions_per_rule": 4,
+      "protected_conditions_per_rule": 3,
+      "request_user": "benchmark_user_0001",
+      "request_resource": "data/abac_benchmark/resource_0001",
+      "permission": "SELECT",
+      "expected_select": true,
+      "supported_environment_attributes": [
+        "server_load",
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "matching_rules_for_anchor": 1,
+      "database_evaluated_conditions_per_rule": 1,
+      "protected_condition_names": [
+        "subnet",
+        "workday",
+        "worktime"
+      ],
+      "database_evaluated_condition_names": [
+        "server_load"
+      ]
+    }
+  ]
+}

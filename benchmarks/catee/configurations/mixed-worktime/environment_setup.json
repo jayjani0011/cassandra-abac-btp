@@ -1,0 +1,44 @@
+{
+  "supported_environment_attributes": [
+    "worktime",
+    "workday",
+    "subnet",
+    "server_load"
+  ],
+  "worktime": {
+    "start_minute": 0,
+    "end_minute": 1439,
+    "end_inclusive": true,
+    "observation": true
+  },
+  "workday": {
+    "days": [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday"
+    ],
+    "observation": true
+  },
+  "subnet": {
+    "benchmark_allow": "0.0.0.0/0",
+    "benchmark_deny": "192.0.2.0/24",
+    "benchmark_client_ipv4": "127.0.0.1",
+    "connection": "TCP loopback; not a Unix-domain DB connection"
+  },
+  "server_load": {
+    "matching_threshold": "1.0",
+    "nonmatching_threshold": "0.0",
+    "required_context": "At least one active database client so normalized connection load is greater than zero."
+  },
+  "condition_mapping": {
+    "e_attr_02": "workday; true when original condition matched its saved observation, otherwise false",
+    "e_attr_03": "subnet; benchmark_allow when matched, otherwise benchmark_deny",
+    "e_attr_04": "server_load; threshold 1.0 when matched, otherwise 0.0",
+    "e_attr_05": "removed; no fifth supported attribute"
+  },
+  "note": "Future campaign setup must provision these settings and use TCP loopback. Existing benchmark runners may need adaptation before these configurations can be measured."
+}

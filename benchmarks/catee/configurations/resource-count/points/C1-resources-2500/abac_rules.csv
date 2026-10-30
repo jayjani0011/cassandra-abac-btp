@@ -1,0 +1,2 @@
+rule_name,effect,permission
+rule_0001,GRANT,SELECT

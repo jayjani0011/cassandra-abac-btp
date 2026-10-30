@@ -1,0 +1,75 @@
+{
+  "kind": "static_configuration_validation",
+  "request_user": "benchmark_user_0001",
+  "request_resource": "data/abac_benchmark/resource_0001",
+  "setup": "Full-day worktime; all seven days configured as workdays; TCP loopback in benchmark_allow; server_load ratio greater than zero.",
+  "profiles": [
+    {
+      "profile": "C1",
+      "applicable_rules": 1,
+      "expected_select": true,
+      "environment_conditions_per_rule": 2,
+      "environment_attributes": [
+        "workday",
+        "worktime"
+      ]
+    },
+    {
+      "profile": "C2",
+      "applicable_rules": 2,
+      "expected_select": true,
+      "environment_conditions_per_rule": 2,
+      "environment_attributes": [
+        "workday",
+        "worktime"
+      ]
+    },
+    {
+      "profile": "C3",
+      "applicable_rules": 1,
+      "expected_select": true,
+      "environment_conditions_per_rule": 3,
+      "environment_attributes": [
+        "subnet",
+        "workday",
+        "worktime"
+      ]
+    },
+    {
+      "profile": "C4",
+      "applicable_rules": 1,
+      "expected_select": true,
+      "environment_conditions_per_rule": 3,
+      "environment_attributes": [
+        "subnet",
+        "workday",
+        "worktime"
+      ]
+    },
+    {
+      "profile": "C5",
+      "applicable_rules": 1,
+      "expected_select": true,
+      "environment_conditions_per_rule": 4,
+      "environment_attributes": [
+        "server_load",
+        "subnet",
+        "workday",
+        "worktime"
+      ]
+    },
+    {
+      "profile": "C6",
+      "applicable_rules": 1,
+      "expected_select": true,
+      "environment_conditions_per_rule": 4,
+      "environment_attributes": [
+        "server_load",
+        "subnet",
+        "workday",
+        "worktime"
+      ]
+    }
+  ],
+  "environment_context": "environment_setup.json"
+}

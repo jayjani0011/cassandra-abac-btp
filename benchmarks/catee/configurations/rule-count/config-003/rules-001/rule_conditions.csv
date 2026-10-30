@@ -1,0 +1,8 @@
+rule_name,entity_type,attribute_name,required_value
+rule_0001,user,u_attr_03,value_02
+rule_0001,user,u_attr_01,value_04
+rule_0001,resource,r_attr_04,value_05
+rule_0001,resource,r_attr_03,value_00
+rule_0001,environment,subnet,benchmark_allow
+rule_0001,environment,workday,true
+rule_0001,environment,worktime,true

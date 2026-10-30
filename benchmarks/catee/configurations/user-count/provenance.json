@@ -1,0 +1,693 @@
+{
+  "source_branch": "origin/abac-experiments-user-count",
+  "source_revision": "fedc822d59cbf280a6e7a87574a3f98f521be957",
+  "independent_variable": "users",
+  "adaptation": "Use only PATEE-supported environmental names: worktime, workday, subnet, and server_load. Former synthetic environment conditions were mapped to those names with match-preserving values; the fifth attribute was removed where present.",
+  "points": [
+    {
+      "profile": "C1",
+      "users": 10,
+      "point_id": "C1-users-010",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "19aa355def763c370671dc1e6fa0677a04220d2f662bfb69749f220a314d9fa0",
+        "users_csv": "9839c3f98ca70c84e3450d5d047df842823e4283c90b21053b114692c6dfdc89",
+        "resources_csv": "200699b7551759c4ee9c9c7a1e8d9bbfa23729d140dc48db6495c1a3275cf598",
+        "user_attributes_csv": "7ad7839cb923eb63179cff20ad2cdfadc79356c9a316560db8914dca8cb9d4c6",
+        "resource_attributes_csv": "2b84d88a42ff42837c57e17e8caa9aa42c9eca474f7a4adcebbb64243bf9b3a0",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "768a02c22432145f8e549eb889933166f336b2493899d19ceb2a4f7135a8ff9a",
+        "rule_conditions_csv": "b7513ce35e9be2334852e8f6849b4e78db7eb9ecae7c290f715e5ed3ffb0a8fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "19aa355def763c370671dc1e6fa0677a04220d2f662bfb69749f220a314d9fa0"
+      }
+    },
+    {
+      "profile": "C1",
+      "users": 25,
+      "point_id": "C1-users-025",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "b2c8aee5a6d1a47051f6a3334e9e3bf8a1cd1e80818b16c00928ff97ce7fde24",
+        "users_csv": "5e7dbada33f890e6f5e123462b3b00952c4c100db0cbd507a7b71ef2894d916c",
+        "resources_csv": "200699b7551759c4ee9c9c7a1e8d9bbfa23729d140dc48db6495c1a3275cf598",
+        "user_attributes_csv": "00d5d2a14ff171f14931eef635ce55869888e72cac3ae3b63c075678424127cb",
+        "resource_attributes_csv": "2b84d88a42ff42837c57e17e8caa9aa42c9eca474f7a4adcebbb64243bf9b3a0",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "768a02c22432145f8e549eb889933166f336b2493899d19ceb2a4f7135a8ff9a",
+        "rule_conditions_csv": "b7513ce35e9be2334852e8f6849b4e78db7eb9ecae7c290f715e5ed3ffb0a8fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "b2c8aee5a6d1a47051f6a3334e9e3bf8a1cd1e80818b16c00928ff97ce7fde24"
+      }
+    },
+    {
+      "profile": "C1",
+      "users": 50,
+      "point_id": "C1-users-050",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "1fb447b48878f23d8ee77190d756342d2c71f54d2b5659797a8aa3b7c75a3e04",
+        "users_csv": "8089b6a60df9ebd1c269abf05ffbf3245e0f4510e8e569da328ac1dc3fc3b7e7",
+        "resources_csv": "200699b7551759c4ee9c9c7a1e8d9bbfa23729d140dc48db6495c1a3275cf598",
+        "user_attributes_csv": "85b3b23ae475f3404a29715b18ddf94d4f7b957bc750f3c301e54217aebbaf8b",
+        "resource_attributes_csv": "2b84d88a42ff42837c57e17e8caa9aa42c9eca474f7a4adcebbb64243bf9b3a0",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "768a02c22432145f8e549eb889933166f336b2493899d19ceb2a4f7135a8ff9a",
+        "rule_conditions_csv": "b7513ce35e9be2334852e8f6849b4e78db7eb9ecae7c290f715e5ed3ffb0a8fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "1fb447b48878f23d8ee77190d756342d2c71f54d2b5659797a8aa3b7c75a3e04"
+      }
+    },
+    {
+      "profile": "C1",
+      "users": 100,
+      "point_id": "C1-users-100",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "9f5596793bc36582cf58735a96968d1e62563d37e1b9fd518c64a8e300975679",
+        "users_csv": "9244f727c1b4ec6411a7d1fcac08cdcce4afd5587c582f9ee6a8b3ba15f83ee5",
+        "resources_csv": "200699b7551759c4ee9c9c7a1e8d9bbfa23729d140dc48db6495c1a3275cf598",
+        "user_attributes_csv": "3d5f4c542fab15c1804f1e9c65298451c0732960d155c45df84cf05ee0e057ed",
+        "resource_attributes_csv": "2b84d88a42ff42837c57e17e8caa9aa42c9eca474f7a4adcebbb64243bf9b3a0",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "768a02c22432145f8e549eb889933166f336b2493899d19ceb2a4f7135a8ff9a",
+        "rule_conditions_csv": "b7513ce35e9be2334852e8f6849b4e78db7eb9ecae7c290f715e5ed3ffb0a8fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "9f5596793bc36582cf58735a96968d1e62563d37e1b9fd518c64a8e300975679"
+      }
+    },
+    {
+      "profile": "C1",
+      "users": 250,
+      "point_id": "C1-users-250",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "ea85f995e016c2f7d20bd04f31566a16b069fc8fa271efba7dd912265d5b5039",
+        "users_csv": "26cc2f04ee7336a08ceaaa21e1e0f310645609b1cb1b7e1ecb8576dc9237c3cd",
+        "resources_csv": "200699b7551759c4ee9c9c7a1e8d9bbfa23729d140dc48db6495c1a3275cf598",
+        "user_attributes_csv": "b8b36a6583121ecaa788d57bb1fd7261856d7b153fdb6b368dee1f74e2092739",
+        "resource_attributes_csv": "2b84d88a42ff42837c57e17e8caa9aa42c9eca474f7a4adcebbb64243bf9b3a0",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "768a02c22432145f8e549eb889933166f336b2493899d19ceb2a4f7135a8ff9a",
+        "rule_conditions_csv": "b7513ce35e9be2334852e8f6849b4e78db7eb9ecae7c290f715e5ed3ffb0a8fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "ea85f995e016c2f7d20bd04f31566a16b069fc8fa271efba7dd912265d5b5039"
+      }
+    },
+    {
+      "profile": "C1",
+      "users": 500,
+      "point_id": "C1-users-500",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "cc3ef58bf979a7ed97b6b8ec3387326429394714d3725b5ab3321a73822f7fb6",
+        "users_csv": "4a6b0661a80bdebef0f53ec4cbf5116afc858d725ba2fbdcceebaf144ad30d22",
+        "resources_csv": "200699b7551759c4ee9c9c7a1e8d9bbfa23729d140dc48db6495c1a3275cf598",
+        "user_attributes_csv": "fc52265bcc69d81d0b781316bb059eb1f50141e0af32c3cf228f4f974a4250c9",
+        "resource_attributes_csv": "2b84d88a42ff42837c57e17e8caa9aa42c9eca474f7a4adcebbb64243bf9b3a0",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "768a02c22432145f8e549eb889933166f336b2493899d19ceb2a4f7135a8ff9a",
+        "rule_conditions_csv": "b7513ce35e9be2334852e8f6849b4e78db7eb9ecae7c290f715e5ed3ffb0a8fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "cc3ef58bf979a7ed97b6b8ec3387326429394714d3725b5ab3321a73822f7fb6"
+      }
+    },
+    {
+      "profile": "C2",
+      "users": 10,
+      "point_id": "C2-users-010",
+      "matching_rules_for_anchor": 2,
+      "source_sha256": {
+        "configuration_json": "ba9a6fa6d18fddf16c536248f1d7b82004f3c2d87c8f26fc1c40f698bd8f46c0",
+        "users_csv": "9839c3f98ca70c84e3450d5d047df842823e4283c90b21053b114692c6dfdc89",
+        "resources_csv": "28ebfccdcf11efff000be0d030601d5c6c7f352dbe0412bb0c3a01096ffc7a09",
+        "user_attributes_csv": "47a5904f9c188fef3994ff7c865fb5d4f7e800e13a899105a2da3b05a0f2231b",
+        "resource_attributes_csv": "624b2970b32417a3ae90ff21196bf68b87cc88349f858fe018184b5d19371a6f",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "d9ec00cfe67f9304d56840e9dead7720d8bfa31b825982f585bd361664a9da88",
+        "rule_conditions_csv": "53965b61c9290695fa74286b00e33962ee7d6b0a1b8a3b624a1fa7cab4d2e4fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "ba9a6fa6d18fddf16c536248f1d7b82004f3c2d87c8f26fc1c40f698bd8f46c0"
+      }
+    },
+    {
+      "profile": "C2",
+      "users": 25,
+      "point_id": "C2-users-025",
+      "matching_rules_for_anchor": 2,
+      "source_sha256": {
+        "configuration_json": "2f3093f58b3e1e9b48967d0c5f3531078e347baa09054c45599cbad0a9c79605",
+        "users_csv": "5e7dbada33f890e6f5e123462b3b00952c4c100db0cbd507a7b71ef2894d916c",
+        "resources_csv": "28ebfccdcf11efff000be0d030601d5c6c7f352dbe0412bb0c3a01096ffc7a09",
+        "user_attributes_csv": "c8255edd4327726fe6ce9729b6a001b9603c7d3c3861fa351e700e688c4edb79",
+        "resource_attributes_csv": "624b2970b32417a3ae90ff21196bf68b87cc88349f858fe018184b5d19371a6f",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "d9ec00cfe67f9304d56840e9dead7720d8bfa31b825982f585bd361664a9da88",
+        "rule_conditions_csv": "53965b61c9290695fa74286b00e33962ee7d6b0a1b8a3b624a1fa7cab4d2e4fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "2f3093f58b3e1e9b48967d0c5f3531078e347baa09054c45599cbad0a9c79605"
+      }
+    },
+    {
+      "profile": "C2",
+      "users": 50,
+      "point_id": "C2-users-050",
+      "matching_rules_for_anchor": 2,
+      "source_sha256": {
+        "configuration_json": "2c03939032b5a138906915675b696e4cc36a345abd07fc4d198f49e86156f97a",
+        "users_csv": "8089b6a60df9ebd1c269abf05ffbf3245e0f4510e8e569da328ac1dc3fc3b7e7",
+        "resources_csv": "28ebfccdcf11efff000be0d030601d5c6c7f352dbe0412bb0c3a01096ffc7a09",
+        "user_attributes_csv": "a0c1cf69d124583efe0fb7e6c7f0c8c8d56e0e9f5fbfb8f434112540e7040183",
+        "resource_attributes_csv": "624b2970b32417a3ae90ff21196bf68b87cc88349f858fe018184b5d19371a6f",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "d9ec00cfe67f9304d56840e9dead7720d8bfa31b825982f585bd361664a9da88",
+        "rule_conditions_csv": "53965b61c9290695fa74286b00e33962ee7d6b0a1b8a3b624a1fa7cab4d2e4fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "2c03939032b5a138906915675b696e4cc36a345abd07fc4d198f49e86156f97a"
+      }
+    },
+    {
+      "profile": "C2",
+      "users": 100,
+      "point_id": "C2-users-100",
+      "matching_rules_for_anchor": 2,
+      "source_sha256": {
+        "configuration_json": "68b5b106c22f793f2ab737b0ba439f732d6ae3bc29b54ca9b806bddc27aa95b1",
+        "users_csv": "9244f727c1b4ec6411a7d1fcac08cdcce4afd5587c582f9ee6a8b3ba15f83ee5",
+        "resources_csv": "28ebfccdcf11efff000be0d030601d5c6c7f352dbe0412bb0c3a01096ffc7a09",
+        "user_attributes_csv": "5259032af01df96bddb8e90545976a4d7f8628fb51a1b26c799e4a9cdb01423e",
+        "resource_attributes_csv": "624b2970b32417a3ae90ff21196bf68b87cc88349f858fe018184b5d19371a6f",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "d9ec00cfe67f9304d56840e9dead7720d8bfa31b825982f585bd361664a9da88",
+        "rule_conditions_csv": "53965b61c9290695fa74286b00e33962ee7d6b0a1b8a3b624a1fa7cab4d2e4fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "68b5b106c22f793f2ab737b0ba439f732d6ae3bc29b54ca9b806bddc27aa95b1"
+      }
+    },
+    {
+      "profile": "C2",
+      "users": 250,
+      "point_id": "C2-users-250",
+      "matching_rules_for_anchor": 2,
+      "source_sha256": {
+        "configuration_json": "4b11324cc9af35a824de11f0c3e1e5062e3461f22a1e1d10dc47a255dc388d51",
+        "users_csv": "26cc2f04ee7336a08ceaaa21e1e0f310645609b1cb1b7e1ecb8576dc9237c3cd",
+        "resources_csv": "28ebfccdcf11efff000be0d030601d5c6c7f352dbe0412bb0c3a01096ffc7a09",
+        "user_attributes_csv": "fd696c02953a0b437ce8f25769816b671788945f1ba0cfc94202400c3e4492f2",
+        "resource_attributes_csv": "624b2970b32417a3ae90ff21196bf68b87cc88349f858fe018184b5d19371a6f",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "d9ec00cfe67f9304d56840e9dead7720d8bfa31b825982f585bd361664a9da88",
+        "rule_conditions_csv": "53965b61c9290695fa74286b00e33962ee7d6b0a1b8a3b624a1fa7cab4d2e4fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "4b11324cc9af35a824de11f0c3e1e5062e3461f22a1e1d10dc47a255dc388d51"
+      }
+    },
+    {
+      "profile": "C2",
+      "users": 500,
+      "point_id": "C2-users-500",
+      "matching_rules_for_anchor": 2,
+      "source_sha256": {
+        "configuration_json": "3dd28f7d24b8563b20f8cdf25e1a899a1004da3e4053ba6c4079a4dd19863776",
+        "users_csv": "4a6b0661a80bdebef0f53ec4cbf5116afc858d725ba2fbdcceebaf144ad30d22",
+        "resources_csv": "28ebfccdcf11efff000be0d030601d5c6c7f352dbe0412bb0c3a01096ffc7a09",
+        "user_attributes_csv": "50da2ebf11e780416b9d7bda323bf49c914693a86d18835bfe383bb47bdc2dbc",
+        "resource_attributes_csv": "624b2970b32417a3ae90ff21196bf68b87cc88349f858fe018184b5d19371a6f",
+        "environment_attributes_csv": "b3bc03da92de2861ae851cad057b013d6abfb729c7696e3e4bc6581ba8b8c69e",
+        "abac_rules_csv": "d9ec00cfe67f9304d56840e9dead7720d8bfa31b825982f585bd361664a9da88",
+        "rule_conditions_csv": "53965b61c9290695fa74286b00e33962ee7d6b0a1b8a3b624a1fa7cab4d2e4fa"
+      },
+      "adapted_sha256": {
+        "configuration_json": "3dd28f7d24b8563b20f8cdf25e1a899a1004da3e4053ba6c4079a4dd19863776"
+      }
+    },
+    {
+      "profile": "C3",
+      "users": 10,
+      "point_id": "C3-users-010",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "ffebddeb918bcfac9dd633c2917398c24572e2a89ec7d40a95c033c8709fa700",
+        "users_csv": "9839c3f98ca70c84e3450d5d047df842823e4283c90b21053b114692c6dfdc89",
+        "resources_csv": "36e88f1824504350f4c35fb4e882547e381bab0fe33df7591a362ff47f2a57b1",
+        "user_attributes_csv": "cf530ef2528d8bdb21397a18a02fef1a1230c0661532adb536907d4d52683610",
+        "resource_attributes_csv": "0af9b70b33166e973781860102bdb5d7d63050e915b66b91c672d356dbc703ec",
+        "environment_attributes_csv": "850cc9f41db28e1333463120aeaae96b18f797df5c90fdc2603321f0f256fa35",
+        "abac_rules_csv": "58de62b30424933afb052d4654f68a83c27bd1e328ec639e1cd50ded6e6df924",
+        "rule_conditions_csv": "76992f040964539a2f5feaa59a67e28b00aaf4df9557f4b6066a9aa7c938b17d"
+      },
+      "adapted_sha256": {
+        "configuration_json": "ffebddeb918bcfac9dd633c2917398c24572e2a89ec7d40a95c033c8709fa700"
+      }
+    },
+    {
+      "profile": "C3",
+      "users": 25,
+      "point_id": "C3-users-025",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "d668bbb66f0024773bd0e6c3c748126653e076ef84f82d8083726bfc2f230fc6",
+        "users_csv": "5e7dbada33f890e6f5e123462b3b00952c4c100db0cbd507a7b71ef2894d916c",
+        "resources_csv": "36e88f1824504350f4c35fb4e882547e381bab0fe33df7591a362ff47f2a57b1",
+        "user_attributes_csv": "3eab9a7b24ec641af11bfeebad025a23eb61774fb796440ae7f420dcd04b8ec5",
+        "resource_attributes_csv": "0af9b70b33166e973781860102bdb5d7d63050e915b66b91c672d356dbc703ec",
+        "environment_attributes_csv": "850cc9f41db28e1333463120aeaae96b18f797df5c90fdc2603321f0f256fa35",
+        "abac_rules_csv": "58de62b30424933afb052d4654f68a83c27bd1e328ec639e1cd50ded6e6df924",
+        "rule_conditions_csv": "76992f040964539a2f5feaa59a67e28b00aaf4df9557f4b6066a9aa7c938b17d"
+      },
+      "adapted_sha256": {
+        "configuration_json": "d668bbb66f0024773bd0e6c3c748126653e076ef84f82d8083726bfc2f230fc6"
+      }
+    },
+    {
+      "profile": "C3",
+      "users": 50,
+      "point_id": "C3-users-050",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "2b488c60def4433086278994dfb80d1a05a52dbbe3ceb5e683020d85644fdfda",
+        "users_csv": "8089b6a60df9ebd1c269abf05ffbf3245e0f4510e8e569da328ac1dc3fc3b7e7",
+        "resources_csv": "36e88f1824504350f4c35fb4e882547e381bab0fe33df7591a362ff47f2a57b1",
+        "user_attributes_csv": "c5ed327519aeba838f5e1d48d7d3acd1d51c8a43e67958465cf556b214b437c2",
+        "resource_attributes_csv": "0af9b70b33166e973781860102bdb5d7d63050e915b66b91c672d356dbc703ec",
+        "environment_attributes_csv": "850cc9f41db28e1333463120aeaae96b18f797df5c90fdc2603321f0f256fa35",
+        "abac_rules_csv": "58de62b30424933afb052d4654f68a83c27bd1e328ec639e1cd50ded6e6df924",
+        "rule_conditions_csv": "76992f040964539a2f5feaa59a67e28b00aaf4df9557f4b6066a9aa7c938b17d"
+      },
+      "adapted_sha256": {
+        "configuration_json": "2b488c60def4433086278994dfb80d1a05a52dbbe3ceb5e683020d85644fdfda"
+      }
+    },
+    {
+      "profile": "C3",
+      "users": 100,
+      "point_id": "C3-users-100",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "70e6a53e6c57ef5b65b987ce5864cba9f859f3829cb08053f8fd2fc98f965190",
+        "users_csv": "9244f727c1b4ec6411a7d1fcac08cdcce4afd5587c582f9ee6a8b3ba15f83ee5",
+        "resources_csv": "36e88f1824504350f4c35fb4e882547e381bab0fe33df7591a362ff47f2a57b1",
+        "user_attributes_csv": "e83f05b3133b9eda6b1037416da638297c0455b91c5469aaa85908a1b7df194e",
+        "resource_attributes_csv": "0af9b70b33166e973781860102bdb5d7d63050e915b66b91c672d356dbc703ec",
+        "environment_attributes_csv": "850cc9f41db28e1333463120aeaae96b18f797df5c90fdc2603321f0f256fa35",
+        "abac_rules_csv": "58de62b30424933afb052d4654f68a83c27bd1e328ec639e1cd50ded6e6df924",
+        "rule_conditions_csv": "76992f040964539a2f5feaa59a67e28b00aaf4df9557f4b6066a9aa7c938b17d"
+      },
+      "adapted_sha256": {
+        "configuration_json": "70e6a53e6c57ef5b65b987ce5864cba9f859f3829cb08053f8fd2fc98f965190"
+      }
+    },
+    {
+      "profile": "C3",
+      "users": 250,
+      "point_id": "C3-users-250",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "93175730d419029dbe336645df52efc011085af3490f034ea460595133bd4434",
+        "users_csv": "26cc2f04ee7336a08ceaaa21e1e0f310645609b1cb1b7e1ecb8576dc9237c3cd",
+        "resources_csv": "36e88f1824504350f4c35fb4e882547e381bab0fe33df7591a362ff47f2a57b1",
+        "user_attributes_csv": "4c43a8686ef365a42828d8aa03b7614c213c3acabf19739cb092b007c9696241",
+        "resource_attributes_csv": "0af9b70b33166e973781860102bdb5d7d63050e915b66b91c672d356dbc703ec",
+        "environment_attributes_csv": "850cc9f41db28e1333463120aeaae96b18f797df5c90fdc2603321f0f256fa35",
+        "abac_rules_csv": "58de62b30424933afb052d4654f68a83c27bd1e328ec639e1cd50ded6e6df924",
+        "rule_conditions_csv": "76992f040964539a2f5feaa59a67e28b00aaf4df9557f4b6066a9aa7c938b17d"
+      },
+      "adapted_sha256": {
+        "configuration_json": "93175730d419029dbe336645df52efc011085af3490f034ea460595133bd4434"
+      }
+    },
+    {
+      "profile": "C3",
+      "users": 500,
+      "point_id": "C3-users-500",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "1f3ec01c46f8b60e88023c755f67cd9d88c701ac263da3d9774fc274bf052b89",
+        "users_csv": "4a6b0661a80bdebef0f53ec4cbf5116afc858d725ba2fbdcceebaf144ad30d22",
+        "resources_csv": "36e88f1824504350f4c35fb4e882547e381bab0fe33df7591a362ff47f2a57b1",
+        "user_attributes_csv": "5315d4b5ce4ff2ca210c2516a7af4a8e8c5050c7e6019b60fd76cd81e1c9e110",
+        "resource_attributes_csv": "0af9b70b33166e973781860102bdb5d7d63050e915b66b91c672d356dbc703ec",
+        "environment_attributes_csv": "850cc9f41db28e1333463120aeaae96b18f797df5c90fdc2603321f0f256fa35",
+        "abac_rules_csv": "58de62b30424933afb052d4654f68a83c27bd1e328ec639e1cd50ded6e6df924",
+        "rule_conditions_csv": "76992f040964539a2f5feaa59a67e28b00aaf4df9557f4b6066a9aa7c938b17d"
+      },
+      "adapted_sha256": {
+        "configuration_json": "1f3ec01c46f8b60e88023c755f67cd9d88c701ac263da3d9774fc274bf052b89"
+      }
+    },
+    {
+      "profile": "C4",
+      "users": 10,
+      "point_id": "C4-users-010",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "4d7128db01ab649a299e5132002a262423cb5eb66de7b638cb09aab292451c55",
+        "users_csv": "9839c3f98ca70c84e3450d5d047df842823e4283c90b21053b114692c6dfdc89",
+        "resources_csv": "46948a5748c387ffd211112feb171d93e8f4f3a71a048d019bcdc1e8dde0f761",
+        "user_attributes_csv": "3fc2115f71ee2018ee1f0a603c23c6c791ddbc62090213e92dc7e08d15c0890a",
+        "resource_attributes_csv": "84502a3efcb01185dc33a0185fd70b19d8aa0ee16b0350f4d6875eae2b2d2e5d",
+        "environment_attributes_csv": "1fc1f1a5ff31a8bce3971c0bc2e56e107b57b59c896e6f3c3d8a72279d53cd26",
+        "abac_rules_csv": "5d2e4fb820f0de8d838d244decb290f49c4bc9c32ca10303e4f062dbfc722582",
+        "rule_conditions_csv": "492e5299a8a4a4240dd6357110f4bba9db01aa6e923a95436c42f6eee9b28663"
+      },
+      "adapted_sha256": {
+        "configuration_json": "4d7128db01ab649a299e5132002a262423cb5eb66de7b638cb09aab292451c55"
+      }
+    },
+    {
+      "profile": "C4",
+      "users": 25,
+      "point_id": "C4-users-025",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "f9e62db8cb91dc78f495332e50f133e6f70828588ce3939f2393c13c58349616",
+        "users_csv": "5e7dbada33f890e6f5e123462b3b00952c4c100db0cbd507a7b71ef2894d916c",
+        "resources_csv": "46948a5748c387ffd211112feb171d93e8f4f3a71a048d019bcdc1e8dde0f761",
+        "user_attributes_csv": "a3271812d68ab003a4f00ed6b19dd0818b8edc2f9d5008a648d788ab169146b6",
+        "resource_attributes_csv": "84502a3efcb01185dc33a0185fd70b19d8aa0ee16b0350f4d6875eae2b2d2e5d",
+        "environment_attributes_csv": "1fc1f1a5ff31a8bce3971c0bc2e56e107b57b59c896e6f3c3d8a72279d53cd26",
+        "abac_rules_csv": "5d2e4fb820f0de8d838d244decb290f49c4bc9c32ca10303e4f062dbfc722582",
+        "rule_conditions_csv": "492e5299a8a4a4240dd6357110f4bba9db01aa6e923a95436c42f6eee9b28663"
+      },
+      "adapted_sha256": {
+        "configuration_json": "f9e62db8cb91dc78f495332e50f133e6f70828588ce3939f2393c13c58349616"
+      }
+    },
+    {
+      "profile": "C4",
+      "users": 50,
+      "point_id": "C4-users-050",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "9b5b59bf910b07824d4db3433d33622fbeec45993fc9ab9fbf6f357e91240081",
+        "users_csv": "8089b6a60df9ebd1c269abf05ffbf3245e0f4510e8e569da328ac1dc3fc3b7e7",
+        "resources_csv": "46948a5748c387ffd211112feb171d93e8f4f3a71a048d019bcdc1e8dde0f761",
+        "user_attributes_csv": "96a7217b9e9302476a70b7096708ec4af468cdc80b43bce34bbb9843aec43977",
+        "resource_attributes_csv": "84502a3efcb01185dc33a0185fd70b19d8aa0ee16b0350f4d6875eae2b2d2e5d",
+        "environment_attributes_csv": "1fc1f1a5ff31a8bce3971c0bc2e56e107b57b59c896e6f3c3d8a72279d53cd26",
+        "abac_rules_csv": "5d2e4fb820f0de8d838d244decb290f49c4bc9c32ca10303e4f062dbfc722582",
+        "rule_conditions_csv": "492e5299a8a4a4240dd6357110f4bba9db01aa6e923a95436c42f6eee9b28663"
+      },
+      "adapted_sha256": {
+        "configuration_json": "9b5b59bf910b07824d4db3433d33622fbeec45993fc9ab9fbf6f357e91240081"
+      }
+    },
+    {
+      "profile": "C4",
+      "users": 100,
+      "point_id": "C4-users-100",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "5729bf8bb963c782fc71a1eb7d5097b820eeaeba20e9cdbdfe9bd8c301923e90",
+        "users_csv": "9244f727c1b4ec6411a7d1fcac08cdcce4afd5587c582f9ee6a8b3ba15f83ee5",
+        "resources_csv": "46948a5748c387ffd211112feb171d93e8f4f3a71a048d019bcdc1e8dde0f761",
+        "user_attributes_csv": "ae993a07bd828b4986281476bd8c800d7c267ee7a5553c472faf683b637756af",
+        "resource_attributes_csv": "84502a3efcb01185dc33a0185fd70b19d8aa0ee16b0350f4d6875eae2b2d2e5d",
+        "environment_attributes_csv": "1fc1f1a5ff31a8bce3971c0bc2e56e107b57b59c896e6f3c3d8a72279d53cd26",
+        "abac_rules_csv": "5d2e4fb820f0de8d838d244decb290f49c4bc9c32ca10303e4f062dbfc722582",
+        "rule_conditions_csv": "492e5299a8a4a4240dd6357110f4bba9db01aa6e923a95436c42f6eee9b28663"
+      },
+      "adapted_sha256": {
+        "configuration_json": "5729bf8bb963c782fc71a1eb7d5097b820eeaeba20e9cdbdfe9bd8c301923e90"
+      }
+    },
+    {
+      "profile": "C4",
+      "users": 250,
+      "point_id": "C4-users-250",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "eae8f41636ed416e622853866edd0286cf6f7152c9527a85f49069aa54b481ab",
+        "users_csv": "26cc2f04ee7336a08ceaaa21e1e0f310645609b1cb1b7e1ecb8576dc9237c3cd",
+        "resources_csv": "46948a5748c387ffd211112feb171d93e8f4f3a71a048d019bcdc1e8dde0f761",
+        "user_attributes_csv": "84d764b93e470ed0a6310227b03126e909edc7a4eaea25b26531a6c396e273ec",
+        "resource_attributes_csv": "84502a3efcb01185dc33a0185fd70b19d8aa0ee16b0350f4d6875eae2b2d2e5d",
+        "environment_attributes_csv": "1fc1f1a5ff31a8bce3971c0bc2e56e107b57b59c896e6f3c3d8a72279d53cd26",
+        "abac_rules_csv": "5d2e4fb820f0de8d838d244decb290f49c4bc9c32ca10303e4f062dbfc722582",
+        "rule_conditions_csv": "492e5299a8a4a4240dd6357110f4bba9db01aa6e923a95436c42f6eee9b28663"
+      },
+      "adapted_sha256": {
+        "configuration_json": "eae8f41636ed416e622853866edd0286cf6f7152c9527a85f49069aa54b481ab"
+      }
+    },
+    {
+      "profile": "C4",
+      "users": 500,
+      "point_id": "C4-users-500",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "67ff35052819bc824c185f284aae783bf93e037757ade064aea14e8a18a088e8",
+        "users_csv": "4a6b0661a80bdebef0f53ec4cbf5116afc858d725ba2fbdcceebaf144ad30d22",
+        "resources_csv": "46948a5748c387ffd211112feb171d93e8f4f3a71a048d019bcdc1e8dde0f761",
+        "user_attributes_csv": "7911c7893194a506d8b03123af79f1efa342cb383f3d6329a2428f05423e788a",
+        "resource_attributes_csv": "84502a3efcb01185dc33a0185fd70b19d8aa0ee16b0350f4d6875eae2b2d2e5d",
+        "environment_attributes_csv": "1fc1f1a5ff31a8bce3971c0bc2e56e107b57b59c896e6f3c3d8a72279d53cd26",
+        "abac_rules_csv": "5d2e4fb820f0de8d838d244decb290f49c4bc9c32ca10303e4f062dbfc722582",
+        "rule_conditions_csv": "492e5299a8a4a4240dd6357110f4bba9db01aa6e923a95436c42f6eee9b28663"
+      },
+      "adapted_sha256": {
+        "configuration_json": "67ff35052819bc824c185f284aae783bf93e037757ade064aea14e8a18a088e8"
+      }
+    },
+    {
+      "profile": "C5",
+      "users": 10,
+      "point_id": "C5-users-010",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "8fc2f07a5e22715e76be16d7d09e29245fec169aab8b8914a483779f72b5ed0c",
+        "users_csv": "9839c3f98ca70c84e3450d5d047df842823e4283c90b21053b114692c6dfdc89",
+        "resources_csv": "ad2df7cc1f1bbb58a0d0575df2bb6328200c351501e9827815e9466b3befb6f2",
+        "user_attributes_csv": "0728b35f8d16dff5c503937b2821d4ca1f3d60f8e4c6d131f3f819abf0948cd6",
+        "resource_attributes_csv": "c8dc6ba0531cccd6f6f8f26af14f41157cedb3232970771d097c00b4790afa73",
+        "environment_attributes_csv": "4639bfe3e0633ac2eddfa30c63a49712a7a170d92e649313190b2e55cb384eed",
+        "abac_rules_csv": "50af34fb41664d2b7e961c2bff5a3d50c51ca85711b7512957f96c124d91e1fd",
+        "rule_conditions_csv": "da507e41a11918c90c82ceedb40c51649d5b61eade08caca728e1aa1e8049c20"
+      },
+      "adapted_sha256": {
+        "configuration_json": "4bb569ff0f37952fda63d9dfe0672632e2122c9089d2d9d7e81f64d0fa26889d"
+      }
+    },
+    {
+      "profile": "C5",
+      "users": 25,
+      "point_id": "C5-users-025",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "03e3bb901fcafae19d5c68c8645485f7c742fd64c7b6a27408067b808cf70e11",
+        "users_csv": "5e7dbada33f890e6f5e123462b3b00952c4c100db0cbd507a7b71ef2894d916c",
+        "resources_csv": "ad2df7cc1f1bbb58a0d0575df2bb6328200c351501e9827815e9466b3befb6f2",
+        "user_attributes_csv": "c16724392238d6769250be7f8cc0edfc7cf27284098b5041b68902b1a64dbffb",
+        "resource_attributes_csv": "c8dc6ba0531cccd6f6f8f26af14f41157cedb3232970771d097c00b4790afa73",
+        "environment_attributes_csv": "4639bfe3e0633ac2eddfa30c63a49712a7a170d92e649313190b2e55cb384eed",
+        "abac_rules_csv": "50af34fb41664d2b7e961c2bff5a3d50c51ca85711b7512957f96c124d91e1fd",
+        "rule_conditions_csv": "da507e41a11918c90c82ceedb40c51649d5b61eade08caca728e1aa1e8049c20"
+      },
+      "adapted_sha256": {
+        "configuration_json": "9d24f1a3340e7af2eff4d5938cb57eb27594983ee97d1679bcf9b14e8f898ee5"
+      }
+    },
+    {
+      "profile": "C5",
+      "users": 50,
+      "point_id": "C5-users-050",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "21217fb9159dc21b233a14519f3e15f4b5b85d6806401c8ec4df7153dc0bc491",
+        "users_csv": "8089b6a60df9ebd1c269abf05ffbf3245e0f4510e8e569da328ac1dc3fc3b7e7",
+        "resources_csv": "ad2df7cc1f1bbb58a0d0575df2bb6328200c351501e9827815e9466b3befb6f2",
+        "user_attributes_csv": "3f088326ae8c27b3b60adda0c130ebea3a4711ac99871c14aa82d51dfd051fdd",
+        "resource_attributes_csv": "c8dc6ba0531cccd6f6f8f26af14f41157cedb3232970771d097c00b4790afa73",
+        "environment_attributes_csv": "4639bfe3e0633ac2eddfa30c63a49712a7a170d92e649313190b2e55cb384eed",
+        "abac_rules_csv": "50af34fb41664d2b7e961c2bff5a3d50c51ca85711b7512957f96c124d91e1fd",
+        "rule_conditions_csv": "da507e41a11918c90c82ceedb40c51649d5b61eade08caca728e1aa1e8049c20"
+      },
+      "adapted_sha256": {
+        "configuration_json": "7cd156e81756346aec7f0d8962f0db580fdb9796ac0e554a3b4f526f53f5b4a6"
+      }
+    },
+    {
+      "profile": "C5",
+      "users": 100,
+      "point_id": "C5-users-100",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "cc94858b181df0fa856d6d36f92293d7fe971ee20ecff332e722488558da5b45",
+        "users_csv": "9244f727c1b4ec6411a7d1fcac08cdcce4afd5587c582f9ee6a8b3ba15f83ee5",
+        "resources_csv": "ad2df7cc1f1bbb58a0d0575df2bb6328200c351501e9827815e9466b3befb6f2",
+        "user_attributes_csv": "d56800c04e0719c2ddcae8fcc3ea490366fd51352c4af47e698fe9417dbf6192",
+        "resource_attributes_csv": "c8dc6ba0531cccd6f6f8f26af14f41157cedb3232970771d097c00b4790afa73",
+        "environment_attributes_csv": "4639bfe3e0633ac2eddfa30c63a49712a7a170d92e649313190b2e55cb384eed",
+        "abac_rules_csv": "50af34fb41664d2b7e961c2bff5a3d50c51ca85711b7512957f96c124d91e1fd",
+        "rule_conditions_csv": "da507e41a11918c90c82ceedb40c51649d5b61eade08caca728e1aa1e8049c20"
+      },
+      "adapted_sha256": {
+        "configuration_json": "0dd74688886fee72af975672ab1524000a446899231dbb9043fd2e2310c53a4a"
+      }
+    },
+    {
+      "profile": "C5",
+      "users": 250,
+      "point_id": "C5-users-250",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "325b699b9d1520f9f404798abf7571b15abbf45777ef66a3b03e0e1ff7ab3120",
+        "users_csv": "26cc2f04ee7336a08ceaaa21e1e0f310645609b1cb1b7e1ecb8576dc9237c3cd",
+        "resources_csv": "ad2df7cc1f1bbb58a0d0575df2bb6328200c351501e9827815e9466b3befb6f2",
+        "user_attributes_csv": "276ad5831f24632db05a8632b6bc5fa22f8879700d3a6ef603821a727aae3cd1",
+        "resource_attributes_csv": "c8dc6ba0531cccd6f6f8f26af14f41157cedb3232970771d097c00b4790afa73",
+        "environment_attributes_csv": "4639bfe3e0633ac2eddfa30c63a49712a7a170d92e649313190b2e55cb384eed",
+        "abac_rules_csv": "50af34fb41664d2b7e961c2bff5a3d50c51ca85711b7512957f96c124d91e1fd",
+        "rule_conditions_csv": "da507e41a11918c90c82ceedb40c51649d5b61eade08caca728e1aa1e8049c20"
+      },
+      "adapted_sha256": {
+        "configuration_json": "c331cf989b5fc1f72f1fca481adb58228e685c6039f66173f883d903cb1054fa"
+      }
+    },
+    {
+      "profile": "C5",
+      "users": 500,
+      "point_id": "C5-users-500",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "736f27b190d9365cbce1ec1dbdbd0e1676083b0ade93df93951ce018d61a4e8e",
+        "users_csv": "4a6b0661a80bdebef0f53ec4cbf5116afc858d725ba2fbdcceebaf144ad30d22",
+        "resources_csv": "ad2df7cc1f1bbb58a0d0575df2bb6328200c351501e9827815e9466b3befb6f2",
+        "user_attributes_csv": "b5f64b9d21f03c8e5b0bf0b5e808f0a165c6a7db6f0518c70c9e54d637ba7de1",
+        "resource_attributes_csv": "c8dc6ba0531cccd6f6f8f26af14f41157cedb3232970771d097c00b4790afa73",
+        "environment_attributes_csv": "4639bfe3e0633ac2eddfa30c63a49712a7a170d92e649313190b2e55cb384eed",
+        "abac_rules_csv": "50af34fb41664d2b7e961c2bff5a3d50c51ca85711b7512957f96c124d91e1fd",
+        "rule_conditions_csv": "da507e41a11918c90c82ceedb40c51649d5b61eade08caca728e1aa1e8049c20"
+      },
+      "adapted_sha256": {
+        "configuration_json": "9b00c86ad952c15c64a8e26711b6528226e7e5aaba48e5f10daf1d12e177d494"
+      }
+    },
+    {
+      "profile": "C6",
+      "users": 10,
+      "point_id": "C6-users-010",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "35ff8590e43d4f3d1d9d377a3988eed78c200a88490c48122ebe2dafffd5d125",
+        "users_csv": "9839c3f98ca70c84e3450d5d047df842823e4283c90b21053b114692c6dfdc89",
+        "resources_csv": "e6388fb36caddcb85b74a337d6034bbf50adc3cdb6139c38c2abebcbece22e15",
+        "user_attributes_csv": "4319d0dba80cadfd6d0f71ff91d124bd1834dc8b01e35555865e86973006d576",
+        "resource_attributes_csv": "e8fe8de79a74a3f5ecef70d110cba1f062c6e91fb9cdbc9a4bf6fe1238cab57a",
+        "environment_attributes_csv": "b80ff69d434e9a5eaeac59f727229043d3048878acffed9b2d401b6e7eb23cb7",
+        "abac_rules_csv": "15af2f9855ecb569e7637dbb3db8efd067cf37f2f017fea6a21bf4f4a2b87768",
+        "rule_conditions_csv": "84fc35a9283622bbbbfb73bd1455b8b92ea541d51fd233f691271f9343fa1ff3"
+      },
+      "adapted_sha256": {
+        "configuration_json": "0fe64c738bf4086557d01ce80f86757530895543bf24c5f58956ee1ddc377388"
+      }
+    },
+    {
+      "profile": "C6",
+      "users": 25,
+      "point_id": "C6-users-025",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "b5db30eb5c667a517a567b8245a298756069f0feafc37ae97deb8f342ed22a44",
+        "users_csv": "5e7dbada33f890e6f5e123462b3b00952c4c100db0cbd507a7b71ef2894d916c",
+        "resources_csv": "e6388fb36caddcb85b74a337d6034bbf50adc3cdb6139c38c2abebcbece22e15",
+        "user_attributes_csv": "4bf1bf93095e31fa690831bd247f53481e81ac317fc8e975f13d7f22589dd4e7",
+        "resource_attributes_csv": "e8fe8de79a74a3f5ecef70d110cba1f062c6e91fb9cdbc9a4bf6fe1238cab57a",
+        "environment_attributes_csv": "b80ff69d434e9a5eaeac59f727229043d3048878acffed9b2d401b6e7eb23cb7",
+        "abac_rules_csv": "15af2f9855ecb569e7637dbb3db8efd067cf37f2f017fea6a21bf4f4a2b87768",
+        "rule_conditions_csv": "84fc35a9283622bbbbfb73bd1455b8b92ea541d51fd233f691271f9343fa1ff3"
+      },
+      "adapted_sha256": {
+        "configuration_json": "4937a523d84269a0ebde0e4ba4921e21380919310aa3d4b4beee1ce6430977c8"
+      }
+    },
+    {
+      "profile": "C6",
+      "users": 50,
+      "point_id": "C6-users-050",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "4cdd25869ee76ffa7bc37956694525102da96a92763c7cd52d149f42b7885062",
+        "users_csv": "8089b6a60df9ebd1c269abf05ffbf3245e0f4510e8e569da328ac1dc3fc3b7e7",
+        "resources_csv": "e6388fb36caddcb85b74a337d6034bbf50adc3cdb6139c38c2abebcbece22e15",
+        "user_attributes_csv": "4e6c097857af0ce66f6a4d1d6f0b7cfe25c0e624c1c2f399f1331d8759d1282f",
+        "resource_attributes_csv": "e8fe8de79a74a3f5ecef70d110cba1f062c6e91fb9cdbc9a4bf6fe1238cab57a",
+        "environment_attributes_csv": "b80ff69d434e9a5eaeac59f727229043d3048878acffed9b2d401b6e7eb23cb7",
+        "abac_rules_csv": "15af2f9855ecb569e7637dbb3db8efd067cf37f2f017fea6a21bf4f4a2b87768",
+        "rule_conditions_csv": "84fc35a9283622bbbbfb73bd1455b8b92ea541d51fd233f691271f9343fa1ff3"
+      },
+      "adapted_sha256": {
+        "configuration_json": "886a1c0651045cc36a4592dce8d31511ba56e59689517f04a4f15601c42b1e39"
+      }
+    },
+    {
+      "profile": "C6",
+      "users": 100,
+      "point_id": "C6-users-100",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "3ed81b5adacc399e65970de068faefbd476ec8ca22cbf173262640f403ee230a",
+        "users_csv": "9244f727c1b4ec6411a7d1fcac08cdcce4afd5587c582f9ee6a8b3ba15f83ee5",
+        "resources_csv": "e6388fb36caddcb85b74a337d6034bbf50adc3cdb6139c38c2abebcbece22e15",
+        "user_attributes_csv": "4848820720641330735e0efb436c1be2575a30bd097b248a70d66892d63151ec",
+        "resource_attributes_csv": "e8fe8de79a74a3f5ecef70d110cba1f062c6e91fb9cdbc9a4bf6fe1238cab57a",
+        "environment_attributes_csv": "b80ff69d434e9a5eaeac59f727229043d3048878acffed9b2d401b6e7eb23cb7",
+        "abac_rules_csv": "15af2f9855ecb569e7637dbb3db8efd067cf37f2f017fea6a21bf4f4a2b87768",
+        "rule_conditions_csv": "84fc35a9283622bbbbfb73bd1455b8b92ea541d51fd233f691271f9343fa1ff3"
+      },
+      "adapted_sha256": {
+        "configuration_json": "69363a6a72b69a7bd04b8c21ce781bf1e19dfa9b510c769328055dfc5ff38ce3"
+      }
+    },
+    {
+      "profile": "C6",
+      "users": 250,
+      "point_id": "C6-users-250",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "2efb7cf3f689e0362afa9512ad04f16a621343833076c7fa047721f750d60556",
+        "users_csv": "26cc2f04ee7336a08ceaaa21e1e0f310645609b1cb1b7e1ecb8576dc9237c3cd",
+        "resources_csv": "e6388fb36caddcb85b74a337d6034bbf50adc3cdb6139c38c2abebcbece22e15",
+        "user_attributes_csv": "d5d4158422cb1c4da5f96cbca6c613bbf2bf6f37d8913181608531ce38c9a497",
+        "resource_attributes_csv": "e8fe8de79a74a3f5ecef70d110cba1f062c6e91fb9cdbc9a4bf6fe1238cab57a",
+        "environment_attributes_csv": "b80ff69d434e9a5eaeac59f727229043d3048878acffed9b2d401b6e7eb23cb7",
+        "abac_rules_csv": "15af2f9855ecb569e7637dbb3db8efd067cf37f2f017fea6a21bf4f4a2b87768",
+        "rule_conditions_csv": "84fc35a9283622bbbbfb73bd1455b8b92ea541d51fd233f691271f9343fa1ff3"
+      },
+      "adapted_sha256": {
+        "configuration_json": "bef0fc72ed2863fb4fda50c8198d87868cbd186f6642cd869025b96ff143782a"
+      }
+    },
+    {
+      "profile": "C6",
+      "users": 500,
+      "point_id": "C6-users-500",
+      "matching_rules_for_anchor": 1,
+      "source_sha256": {
+        "configuration_json": "04b3afc8b9f8bffe86f0d75545770e71beabb3d8f6aa3973fdfd66c81128a98e",
+        "users_csv": "4a6b0661a80bdebef0f53ec4cbf5116afc858d725ba2fbdcceebaf144ad30d22",
+        "resources_csv": "e6388fb36caddcb85b74a337d6034bbf50adc3cdb6139c38c2abebcbece22e15",
+        "user_attributes_csv": "eba3f0b38bbba73201e26c8bf5a133c131d61f3dc911a849d9ce3628350e140c",
+        "resource_attributes_csv": "e8fe8de79a74a3f5ecef70d110cba1f062c6e91fb9cdbc9a4bf6fe1238cab57a",
+        "environment_attributes_csv": "b80ff69d434e9a5eaeac59f727229043d3048878acffed9b2d401b6e7eb23cb7",
+        "abac_rules_csv": "15af2f9855ecb569e7637dbb3db8efd067cf37f2f017fea6a21bf4f4a2b87768",
+        "rule_conditions_csv": "84fc35a9283622bbbbfb73bd1455b8b92ea541d51fd233f691271f9343fa1ff3"
+      },
+      "adapted_sha256": {
+        "configuration_json": "f4e29634cc5566786353b0244051c4b34c3a87b5f4d54455a02e121f5c9ea9e3"
+      }
+    }
+  ],
+  "environment_setup": "../environment_setup.json"
+}
